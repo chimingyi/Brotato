@@ -43,11 +43,11 @@ function normalizeProgress(value, allWeaponIds, allItemIds) {
   };
 }
 
-export function loadProgress({ testMode, lockedTest = false, characterIds, weaponIds, itemIds, enemyIds }) {
+export function loadProgress({ testMode, lockedTest = false, characterIds, weaponIds, itemIds, enemyIds, maxDanger = 4 }) {
   if (testMode && !lockedTest) {
     return {
       ...createDefaultProgress(),
-      highestDangerUnlocked: 4,
+      highestDangerUnlocked: maxDanger,
       unlockedCharacters: [...characterIds],
       unlockedWeapons: [...weaponIds],
       unlockedItems: [...itemIds],
@@ -73,11 +73,11 @@ export function saveProgress(progress, testMode = false) {
   }
 }
 
-export function resetProgress({ testMode, lockedTest = false, characterIds, weaponIds, itemIds, enemyIds }) {
+export function resetProgress({ testMode, lockedTest = false, characterIds, weaponIds, itemIds, enemyIds, maxDanger = 4 }) {
   if (!testMode) {
     try { window.localStorage.removeItem(SAVE_KEY); } catch { /* 忽略不可用的存储。 */ }
   }
-  return loadProgress({ testMode, lockedTest, characterIds, weaponIds, itemIds, enemyIds });
+  return loadProgress({ testMode, lockedTest, characterIds, weaponIds, itemIds, enemyIds, maxDanger });
 }
 
 const CHARACTER_REQUIREMENTS = [
@@ -103,7 +103,7 @@ export function recordRunProgress(progress, result) {
   if (result.won) {
     progress.wins += 1;
     if (result.danger >= progress.highestDangerUnlocked) {
-      progress.highestDangerUnlocked = Math.min(4, result.danger + 1);
+      progress.highestDangerUnlocked = Math.min(result.maxDanger ?? 4, result.danger + 1);
     }
   }
 

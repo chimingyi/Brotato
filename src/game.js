@@ -5,6 +5,7 @@ import {
   DANGER_LEVELS,
   ELITE_ARCHETYPES,
   ENEMY_ARCHETYPES,
+  ENEMY_TRAITS,
   ITEMS,
   LEVEL_UPGRADES,
   MAX_WAVES,
@@ -123,6 +124,9 @@ const forceItemShop = localTestMode
 const lockedTestProgress = localTestMode && parameters.get("lockedProgress") === "1";
 const testNoEnemies = localTestMode && parameters.get("noEnemies") === "1";
 const testSingleTree = localTestMode && parameters.get("treeTest") === "1";
+const requestedEnemyTraits = (parameters.get("enemyTraits") || "")
+  .split(",")
+  .filter((traitId) => ENEMY_TRAITS[traitId]);
 
 const characterIds = CHARACTERS.map((character) => character.id);
 const weaponIds = Object.keys(WEAPONS);
@@ -133,7 +137,15 @@ const enemyCatalog = [
   ...Object.entries(BOSS_ARCHETYPES).map(([id, definition]) => ({ key: `boss:${id}`, id, rank: "boss", definition })),
 ];
 const enemyIds = enemyCatalog.map((entry) => entry.key);
-let progress = loadProgress({ testMode: localTestMode, lockedTest: lockedTestProgress, characterIds, weaponIds, itemIds, enemyIds });
+let progress = loadProgress({
+  testMode: localTestMode,
+  lockedTest: lockedTestProgress,
+  characterIds,
+  weaponIds,
+  itemIds,
+  enemyIds,
+  maxDanger: DANGER_LEVELS.length - 1,
+});
 for (const character of CHARACTERS) {
   if (!progress.unlockedCharacters.includes(character.id)) continue;
   for (const weaponId of character.allowedWeapons) {
@@ -187,6 +199,7 @@ const game = {
   encounteredEnemies: new Set(),
   progressRecorded: false,
   shakeTime: 0,
+  traitState: createTraitState(),
   metrics: createEmptyMetrics(),
 };
 
@@ -230,7 +243,26 @@ function createEmptyMetrics() {
     treesDestroyed: 0,
     consumablesDropped: 0,
     consumablesPicked: 0,
+    characterTraitProcs: 0,
+    itemTraitProcs: 0,
+    enemyTraitSpawns: 0,
+    enemyTraitExplosions: 0,
   };
+}
+
+function createTraitState() {
+  return {
+    stationaryTime: 0,
+    chargedAttacks: 0,
+  };
+}
+
+function getCharacterTraitId() {
+  return game.selectedCharacter?.trait?.id ?? null;
+}
+
+function hasItem(itemId) {
+  return game.items.includes(itemId);
 }
 
 function formatTime(totalSeconds) {
@@ -328,6 +360,16 @@ function getEffectiveStat(stat) {
   for (const tagState of getWeaponTagState()) {
     if (tagState.stat === stat) value += tagState.bonus;
   }
+  const traitId = getCharacterTraitId();
+  if (stat === "damage" && traitId === "tailwind") {
+    value += Math.max(0, game.stats.speed ?? 0) * 0.35;
+  }
+  if (stat === "attackSpeed" && traitId === "kinetic_charge") {
+    value += Math.max(0, game.stats.speed ?? 0) * 0.4;
+  }
+  if (stat === "armor" && traitId === "rooted_guard" && game.traitState.stationaryTime >= 0.8) {
+    value += 4;
+  }
   const limits = {
     maxHealth: [1, Number.POSITIVE_INFINITY],
     attackSpeed: [-80, Number.POSITIVE_INFINITY],
@@ -354,7 +396,9 @@ function getWeaponDamage(instance) {
 }
 
 function getWeaponCooldown(instance) {
-  return WEAPONS[instance.id].cooldown / Math.max(0.2, 1 + getEffectiveStat("attackSpeed") / 100);
+  const definition = WEAPONS[instance.id];
+  const traitMultiplier = getCharacterTraitId() === "overclock" && definition.type === "engineering" ? 0.8 : 1;
+  return definition.cooldown * traitMultiplier / Math.max(0.2, 1 + getEffectiveStat("attackSpeed") / 100);
 }
 
 function getMovementSpeed() {
@@ -416,7 +460,7 @@ function renderCollection() {
   const characterEntries = CHARACTERS.map((character) => ({
     icon: character.icon,
     name: character.name,
-    description: character.tagline,
+    description: `${character.trait.name}：${character.trait.description}`,
     hint: getCharacterUnlockText(character.id),
     unlocked: progress.unlockedCharacters.includes(character.id),
   }));
@@ -441,11 +485,19 @@ function renderCollection() {
     hint: "在远征中遇见它",
     unlocked: discoveredEnemySet.has(enemy.key),
   }));
+  const enemyTraitEntries = Object.values(ENEMY_TRAITS).map((trait) => ({
+    icon: trait.icon,
+    name: trait.name,
+    description: trait.description,
+    hint: "提高危险等级后出现",
+    unlocked: true,
+  }));
   ui.collectionContent.replaceChildren(
     createCollectionGroup("探险员", characterEntries),
     createCollectionGroup("武器", weaponEntries),
     createCollectionGroup("道具", itemEntries),
     createCollectionGroup("敌人", enemyEntries),
+    createCollectionGroup("敌人变异", enemyTraitEntries),
   );
 }
 
@@ -592,6 +644,7 @@ function beginRun(startingWeaponId) {
   game.progressRecorded = false;
   game.floatingTexts = [];
   game.shakeTime = 0;
+  game.traitState = createTraitState();
   game.inventory = [createWeapon(startingWeaponId)];
   game.items = localTestMode
     ? requestedStartItems.filter((itemId) => ITEMS.some((item) => item.id === itemId))
@@ -638,6 +691,7 @@ function startWave() {
   }
   player.invulnerableTimer = 0;
   player.regenAccumulator = 0;
+  game.traitState.stationaryTime = 0;
   spawnDestructibles();
   if (game.waveDefinition.special) spawnSpecialEnemy();
   for (const weapon of game.inventory) weapon.cooldown = Math.random() * 0.2;
@@ -717,6 +771,33 @@ function getEnemySpawnPoint() {
   return { x, y };
 }
 
+function rollEnemyTraits(base, rank) {
+  if (base.summonedOnly) return [];
+  if (localTestMode && requestedEnemyTraits.length > 0) return [...requestedEnemyTraits];
+  const danger = DANGER_LEVELS[game.danger];
+  const guaranteedSpecial = rank !== "normal" && game.danger >= 3;
+  if (!guaranteedSpecial && Math.random() >= (danger.traitChance ?? 0)) return [];
+  const slots = Math.max(1, danger.traitSlots ?? 1);
+  return shuffle(Object.keys(ENEMY_TRAITS)).slice(0, slots);
+}
+
+function applyEnemyTraits(enemy) {
+  if (enemy.traits.includes("armored")) enemy.armor += 6;
+  if (enemy.traits.includes("swift")) enemy.speed *= 1.2;
+  if (enemy.traits.includes("massive")) {
+    enemy.maxHealth *= 1.35;
+    enemy.health = enemy.maxHealth;
+    enemy.radius *= 1.12;
+    enemy.speed *= 0.86;
+  }
+  enemy.shieldHits = enemy.traits.includes("shielded") ? 3 : 0;
+  game.metrics.enemyTraitSpawns += enemy.traits.length;
+}
+
+function getEnemyFrenzyMultiplier(enemy) {
+  return enemy.traits.includes("frenzied") && enemy.health <= enemy.maxHealth * 0.5 ? 1.35 : 1;
+}
+
 function spawnEnemy(type = null, options = {}) {
   const rank = options.rank ?? "normal";
   const enemyType = type ?? randomItem(game.waveDefinition.types);
@@ -728,6 +809,7 @@ function spawnEnemy(type = null, options = {}) {
   const specialScale = rank === "normal" ? 1 : Math.sqrt(game.waveDefinition.healthMultiplier);
   const healthMultiplier = rank === "normal" ? game.waveDefinition.healthMultiplier : specialScale;
   const damageMultiplier = rank === "normal" ? game.waveDefinition.damageMultiplier : Math.sqrt(game.waveDefinition.damageMultiplier);
+  const traits = rollEnemyTraits(base, rank);
   const enemy = {
     uid: game.nextUid++,
     rank,
@@ -753,7 +835,10 @@ function spawnEnemy(type = null, options = {}) {
     chargeX: 0,
     chargeY: 0,
     orbitDirection: Math.random() < 0.5 ? -1 : 1,
+    traits,
+    shieldHits: 0,
   };
+  applyEnemyTraits(enemy);
   game.enemies.push(enemy);
   game.encounteredEnemies.add(`${rank}:${enemyType}`);
   if (rank !== "normal") game.metrics.specials += 1;
@@ -792,9 +877,17 @@ function fireWeapon(instance) {
   player.facingX = directionX;
   player.facingY = directionY;
   game.metrics.attacks += 1;
+  let attackMultiplier = 1;
+  if (hasItem("storm_battery")) {
+    game.traitState.chargedAttacks += 1;
+    if (game.traitState.chargedAttacks % 8 === 0) {
+      attackMultiplier = 1.4;
+      game.metrics.itemTraitProcs += 1;
+    }
+  }
 
   if (definition.type === "melee") {
-    const damage = getWeaponDamage(instance);
+    const damage = getWeaponDamage(instance) * attackMultiplier;
     game.meleeEffects.push({
       x: player.x,
       y: player.y,
@@ -807,7 +900,10 @@ function fireWeapon(instance) {
       const enemy = game.enemies[index];
       if (distanceSquared(player, enemy) <= (range + enemy.radius) ** 2) {
         applyWeaponStatus(enemy, definition);
-        damageEnemy(index, damage, definition.knockback, directionX, directionY);
+        damageEnemy(index, damage, definition.knockback, directionX, directionY, {
+          weaponType: definition.type,
+          distance: Math.sqrt(distanceSquared(player, enemy)),
+        });
       }
     }
     for (let index = game.destructibles.length - 1; index >= 0; index -= 1) {
@@ -824,19 +920,23 @@ function fireWeapon(instance) {
       const angle = startingAngle + offset * (definition.spread ?? 0);
       const projectileDirectionX = Math.cos(angle);
       const projectileDirectionY = Math.sin(angle);
+      const explosionTraitMultiplier = getCharacterTraitId() === "wide_reaction"
+        ? 1.3
+        : getCharacterTraitId() === "heavy_payload" ? 1.25 : 1;
       game.projectiles.push({
         x: player.x + projectileDirectionX * player.radius,
         y: player.y + projectileDirectionY * player.radius,
         velocityX: projectileDirectionX * definition.projectileSpeed,
         velocityY: projectileDirectionY * definition.projectileSpeed,
         radius: definition.projectileSize ?? 5,
-        damage: getWeaponDamage(instance),
+        damage: getWeaponDamage(instance) * attackMultiplier,
+        weaponType: definition.type,
         knockback: definition.knockback,
         color: definition.projectileColor ?? RARITIES[instance.rarity - 1].color,
         remainingLife: range / definition.projectileSpeed + 0.25,
-        remainingPierce: definition.pierce ?? 0,
+        remainingPierce: (definition.pierce ?? 0) + (getCharacterTraitId() === "phase_arrow" ? 1 : 0),
         remainingBounces: definition.bounces ?? 0,
-        explosionRadius: definition.explosionRadius ?? 0,
+        explosionRadius: (definition.explosionRadius ?? 0) * explosionTraitMultiplier,
         burnDamage: definition.burnDamage ?? 0,
         burnDuration: definition.burnDuration ?? 0,
         slowFactor: definition.slowFactor ?? 1,
@@ -852,7 +952,9 @@ function fireWeapon(instance) {
 
 function applyWeaponStatus(enemy, source) {
   if (source.burnDamage > 0 && source.burnDuration > 0) {
-    const burnDamage = source.burnDamage + Math.max(0, getEffectiveStat("elementalDamage")) * 0.18;
+    const characterMultiplier = getCharacterTraitId() === "deep_kindling" ? 1.35 : 1;
+    const burnDamage = (source.burnDamage + Math.max(0, getEffectiveStat("elementalDamage")) * 0.18) * characterMultiplier;
+    if (characterMultiplier > 1) game.metrics.characterTraitProcs += 1;
     enemy.burnDamage = Math.max(enemy.burnDamage ?? 0, burnDamage);
     enemy.burnRemaining = Math.max(enemy.burnRemaining ?? 0, source.burnDuration);
     game.metrics.burns += 1;
@@ -883,7 +985,14 @@ function damageArea(projectile, directTarget) {
     const dy = target.y - projectile.y;
     const length = Math.hypot(dx, dy) || 1;
     applyWeaponStatus(target, projectile);
-    damageEnemy(currentIndex, projectile.damage * 0.58, projectile.knockback * 0.65, dx / length, dy / length);
+    damageEnemy(
+      currentIndex,
+      projectile.damage * 0.58,
+      projectile.knockback * 0.65,
+      dx / length,
+      dy / length,
+      { weaponType: projectile.weaponType, distance: Math.sqrt(distanceSquared(player, target)), explosion: true },
+    );
   }
 }
 
@@ -911,11 +1020,28 @@ function redirectBounce(projectile) {
   return true;
 }
 
-function damageEnemy(index, baseDamage, knockback, directionX, directionY) {
+function damageEnemy(index, baseDamage, knockback, directionX, directionY, options = {}) {
   const enemy = game.enemies[index];
   if (!enemy) return;
+  let traitDamageMultiplier = 1;
+  if (hasItem("glass_sprout") && enemy.health >= enemy.maxHealth - 0.01) {
+    traitDamageMultiplier *= 1.25;
+    game.metrics.itemTraitProcs += 1;
+  }
+  if (hasItem("wild_scope") && options.weaponType !== "melee" && options.distance >= 260) {
+    traitDamageMultiplier *= 1.25;
+    game.metrics.itemTraitProcs += 1;
+  }
+  if (options.explosion && getCharacterTraitId() === "heavy_payload") {
+    traitDamageMultiplier *= 1.25;
+    game.metrics.characterTraitProcs += 1;
+  }
   const critical = Math.random() * 100 < getEffectiveStat("critChance");
-  const rawDamage = baseDamage * (critical ? 1.8 : 1);
+  const criticalMultiplier = critical && getCharacterTraitId() === "perfect_edge" ? 2.15 : critical ? 1.8 : 1;
+  if (critical && criticalMultiplier > 1.8) game.metrics.characterTraitProcs += 1;
+  const shieldMultiplier = enemy.shieldHits > 0 ? 0.62 : 1;
+  if (enemy.shieldHits > 0) enemy.shieldHits -= 1;
+  const rawDamage = baseDamage * traitDamageMultiplier * criticalMultiplier * shieldMultiplier;
   const enemyArmor = enemy.armor ?? 0;
   const armorReduction = enemyArmor >= 0 ? enemyArmor / (enemyArmor + 22) : enemyArmor / (22 - enemyArmor);
   const damage = Math.max(1, rawDamage * (1 - armorReduction));
@@ -938,6 +1064,10 @@ function damageEnemy(index, baseDamage, knockback, directionX, directionY) {
   if (getEffectiveStat("lifeSteal") > 0 && Math.random() * 100 < getEffectiveStat("lifeSteal")) {
     player.health = Math.min(getEffectiveStat("maxHealth"), player.health + 1);
   }
+  if (hasItem("repair_drone") && options.weaponType === "engineering" && player.health < getEffectiveStat("maxHealth") && Math.random() < 0.1) {
+    player.health = Math.min(getEffectiveStat("maxHealth"), player.health + 1);
+    game.metrics.itemTraitProcs += 1;
+  }
   if (enemy.health <= 0) defeatEnemy(index);
 }
 
@@ -945,7 +1075,12 @@ function defeatEnemy(index) {
   const enemy = game.enemies[index];
   if (!enemy) return;
   createBurst(enemy.x, enemy.y, enemy.definition.light, enemy.rank === "boss" ? 32 : enemy.rank === "elite" ? 20 : 9);
-  for (let amount = 0; amount < enemy.material; amount += 1) {
+  let materialDrops = enemy.material;
+  if (getCharacterTraitId() === "salvage" && Math.random() < 0.22) {
+    materialDrops += 1;
+    game.metrics.characterTraitProcs += 1;
+  }
+  for (let amount = 0; amount < materialDrops; amount += 1) {
     game.gems.push({
       x: enemy.x + (Math.random() - 0.5) * 12,
       y: enemy.y + (Math.random() - 0.5) * 12,
@@ -953,6 +1088,14 @@ function defeatEnemy(index) {
       value: 1,
       phase: Math.random() * Math.PI * 2,
     });
+  }
+  if (enemy.traits.includes("volatile")) {
+    createBurst(enemy.x, enemy.y, ENEMY_TRAITS.volatile.color, 16);
+    game.metrics.enemyTraitExplosions += 1;
+    const explosionDistance = player.radius + enemy.radius + 105;
+    if (distanceSquared(player, enemy) <= explosionDistance * explosionDistance) {
+      hurtPlayer(enemy.damage * 0.65);
+    }
   }
   game.enemies.splice(index, 1);
   game.waveKills += 1;
@@ -972,6 +1115,12 @@ function collectGem(gem) {
   game.materials += gem.value;
   game.waveCollected += gem.value;
   gainExperience(gem.value);
+  if (hasItem("greedy_magnet") && Math.random() < 0.2) {
+    game.materials += 1;
+    game.waveCollected += 1;
+    gainExperience(1);
+    game.metrics.itemTraitProcs += 1;
+  }
   playSound("pickup");
 }
 
@@ -998,6 +1147,9 @@ function updatePlayer(deltaTime) {
     directionY /= length;
     player.facingX = directionX;
     player.facingY = directionY;
+    game.traitState.stationaryTime = 0;
+  } else {
+    game.traitState.stationaryTime += deltaTime;
   }
   const movementSpeed = getMovementSpeed();
   player.x = clamp(player.x + directionX * movementSpeed * deltaTime, player.radius, canvas.width - player.radius);
@@ -1039,7 +1191,18 @@ function updateProjectiles(deltaTime) {
       projectile.hitIds.add(enemy);
       const speed = Math.hypot(projectile.velocityX, projectile.velocityY) || 1;
       applyWeaponStatus(enemy, projectile);
-      damageEnemy(enemyIndex, projectile.damage, projectile.knockback, projectile.velocityX / speed, projectile.velocityY / speed);
+      damageEnemy(
+        enemyIndex,
+        projectile.damage,
+        projectile.knockback,
+        projectile.velocityX / speed,
+        projectile.velocityY / speed,
+        {
+          weaponType: projectile.weaponType,
+          distance: Math.sqrt(distanceSquared(player, enemy)),
+          explosion: projectile.explosionRadius > 0,
+        },
+      );
       damageArea(projectile, enemy);
       if (redirectBounce(projectile)) break;
       if (projectile.remainingPierce > 0) projectile.remainingPierce -= 1;
@@ -1058,14 +1221,32 @@ function updateProjectiles(deltaTime) {
   }
 }
 
+function triggerThornReply() {
+  const retaliationDamage = Math.max(5, 9 + Math.max(0, getEffectiveStat("meleeDamage")) * 0.7);
+  let hit = false;
+  for (let index = game.enemies.length - 1; index >= 0; index -= 1) {
+    const enemy = game.enemies[index];
+    const retaliationRange = 105 + enemy.radius;
+    if (distanceSquared(player, enemy) > retaliationRange * retaliationRange) continue;
+    enemy.health -= retaliationDamage;
+    createBurst(enemy.x, enemy.y, "#b7e07a", 5);
+    hit = true;
+    if (enemy.health <= 0) defeatEnemy(index);
+  }
+  if (hit) game.metrics.itemTraitProcs += 1;
+}
+
 function hurtPlayer(rawDamage) {
   if (player.invulnerableTimer > 0 || game.phase !== "wave") return false;
   if (testInvincible) {
     player.invulnerableTimer = 0.12;
     return true;
   }
-  if (Math.random() * 100 >= clamp(getEffectiveStat("dodge"), 0, 60)) {
-    player.health -= getDamageAfterArmor(rawDamage);
+  const dodged = Math.random() * 100 < clamp(getEffectiveStat("dodge"), 0, 60);
+  if (!dodged) {
+    const braceMultiplier = hasItem("iron_boots") && game.traitState.stationaryTime >= 0.8 ? 0.75 : 1;
+    player.health -= getDamageAfterArmor(rawDamage * braceMultiplier);
+    if (braceMultiplier < 1) game.metrics.itemTraitProcs += 1;
     playSound("hurt");
     if (progress.settings.screenShake) {
       game.shakeTime = Math.max(game.shakeTime, 0.18);
@@ -1073,6 +1254,11 @@ function hurtPlayer(rawDamage) {
     }
   } else {
     createBurst(player.x, player.y, "#c6f4d0", 6);
+    if (hasItem("moon_charm")) {
+      player.health = Math.min(getEffectiveStat("maxHealth"), player.health + 2);
+      game.metrics.itemTraitProcs += 1;
+    }
+    if (hasItem("thorn_crown")) triggerThornReply();
   }
   player.invulnerableTimer = 0.65;
   if (player.health <= 0) finishRun(false);
@@ -1092,7 +1278,7 @@ function shootEnemyProjectile(enemy) {
       velocityX: Math.cos(angle) * definition.projectileSpeed,
       velocityY: Math.sin(angle) * definition.projectileSpeed,
       radius: enemy.rank === "boss" ? 8 : 6,
-      damage: enemy.damage,
+      damage: enemy.damage * getEnemyFrenzyMultiplier(enemy),
       color: definition.light,
       remainingLife: 4,
     });
@@ -1241,11 +1427,12 @@ function updateEnemies(deltaTime) {
     const length = Math.hypot(dx, dy) || 1;
     const slowMultiplier = enemy.slowRemaining > 0 ? enemy.slowFactor : 1;
     const buffMultiplier = getEnemyBuffMultiplier(enemy);
-    updateEnemyBehavior(enemy, deltaTime, dx, dy, length, slowMultiplier * buffMultiplier);
+    const frenzyMultiplier = getEnemyFrenzyMultiplier(enemy);
+    updateEnemyBehavior(enemy, deltaTime, dx, dy, length, slowMultiplier * buffMultiplier * frenzyMultiplier);
     enemy.hitFlash = Math.max(0, enemy.hitFlash - deltaTime);
     const touchDistance = player.radius + enemy.radius;
     if (distanceSquared(player, enemy) <= touchDistance * touchDistance && player.invulnerableTimer <= 0) {
-      hurtPlayer(enemy.damage * (buffMultiplier > 1 ? 1.2 : 1));
+      hurtPlayer(enemy.damage * (buffMultiplier > 1 ? 1.2 : 1) * frenzyMultiplier);
       enemy.x -= dx / length * 18;
       enemy.y -= dy / length * 18;
       if (enemy.behavior === "exploder") {
@@ -1292,7 +1479,9 @@ function updateConsumables(deltaTime) {
     if (distanceSquared(player, consumable) > pickupDistance * pickupDistance) continue;
     if (player.health >= getEffectiveStat("maxHealth")) continue;
     const previousHealth = player.health;
-    player.health = Math.min(getEffectiveStat("maxHealth"), player.health + consumable.healing);
+    const traitMultiplier = getCharacterTraitId() === "field_triage" ? 1.5 : 1;
+    player.health = Math.min(getEffectiveStat("maxHealth"), player.health + consumable.healing * traitMultiplier);
+    if (traitMultiplier > 1) game.metrics.characterTraitProcs += 1;
     game.consumables.splice(index, 1);
     game.metrics.consumablesPicked += 1;
     game.floatingTexts.push({
@@ -1379,6 +1568,10 @@ function endWave() {
   const harvestingIncome = Math.max(0, Math.floor(getEffectiveStat("harvesting")));
   game.materials += harvestingIncome;
   game.stats.harvesting = Math.floor(game.stats.harvesting * 1.05);
+  if (getCharacterTraitId() === "seasoned_growth") {
+    game.stats.harvesting += 1;
+    game.metrics.characterTraitProcs += 1;
+  }
   game.phase = "transition";
   game.keys.clear();
   game.touchX = 0;
@@ -1758,7 +1951,10 @@ function updateHud() {
   const special = game.enemies.find((enemy) => enemy.rank !== "normal");
   ui.specialHud.hidden = !special;
   if (special) {
-    ui.specialName.textContent = `${special.rank === "boss" ? "首领" : "精英"} · ${special.definition.name}`;
+    const traitSuffix = special.traits.length > 0
+      ? ` · ${special.traits.map((traitId) => ENEMY_TRAITS[traitId].name).join("+")}`
+      : "";
+    ui.specialName.textContent = `${special.rank === "boss" ? "首领" : "精英"} · ${special.definition.name}${traitSuffix}`;
     ui.specialHealthFill.style.width = `${clamp(special.health / special.maxHealth, 0, 1) * 100}%`;
     ui.specialHealthText.textContent = `${Math.max(0, Math.ceil(special.health))} / ${Math.ceil(special.maxHealth)}`;
   }
@@ -1775,6 +1971,7 @@ function recordCurrentRun(won) {
     weaponIds,
     itemIds,
     encounteredEnemyIds: [...game.encounteredEnemies],
+    maxDanger: DANGER_LEVELS.length - 1,
   });
   for (const character of CHARACTERS) {
     if (!progress.unlockedCharacters.includes(character.id)) continue;
@@ -1878,6 +2075,30 @@ function drawEnemy(enemy) {
     context.beginPath();
     context.arc(0, 0, enemy.radius + 8, 0, Math.PI * 2);
     context.stroke();
+  }
+  if (enemy.shieldHits > 0) {
+    context.strokeStyle = ENEMY_TRAITS.shielded.color;
+    context.lineWidth = 3;
+    context.setLineDash([5, 4]);
+    context.beginPath();
+    context.arc(0, 0, enemy.radius + 5, 0, Math.PI * 2);
+    context.stroke();
+    context.setLineDash([]);
+  }
+  if (enemy.traits.length > 0) {
+    context.font = "bold 10px system-ui";
+    context.textAlign = "center";
+    enemy.traits.forEach((traitId, index) => {
+      const trait = ENEMY_TRAITS[traitId];
+      const markerX = (index - (enemy.traits.length - 1) / 2) * 14;
+      context.fillStyle = trait.color;
+      context.beginPath();
+      context.arc(markerX, -enemy.radius - 16, 6, 0, Math.PI * 2);
+      context.fill();
+      context.fillStyle = "#182017";
+      context.fillText(trait.icon, markerX, -enemy.radius - 12.5);
+    });
+    context.textAlign = "start";
   }
   if (enemy.burnRemaining > 0) {
     context.strokeStyle = "#ff9b4b";
@@ -2074,10 +2295,25 @@ function getTestSnapshot() {
     materials: game.materials,
     waveKills: game.waveKills,
     totalKills: game.totalKills,
+    characterTrait: game.selectedCharacter?.trait ?? null,
+    ownedItemTraits: game.items
+      .map((itemId) => ITEMS.find((item) => item.id === itemId)?.trait)
+      .filter(Boolean),
+    effectiveStats: {
+      damage: Number(getEffectiveStat("damage").toFixed(2)),
+      attackSpeed: Number(getEffectiveStat("attackSpeed").toFixed(2)),
+      armor: Number(getEffectiveStat("armor").toFixed(2)),
+      speed: Number(getEffectiveStat("speed").toFixed(2)),
+      harvesting: Number(getEffectiveStat("harvesting").toFixed(2)),
+    },
     inventory: game.inventory.map((weapon) => ({ id: weapon.id, rarity: weapon.rarity, damage: Math.round(getWeaponDamage(weapon)) })),
     enemies: game.enemies.length,
     enemyRanks: game.enemies.reduce((counts, enemy) => ({ ...counts, [enemy.rank]: (counts[enemy.rank] ?? 0) + 1 }), {}),
     enemyBehaviors: game.enemies.reduce((counts, enemy) => ({ ...counts, [enemy.behavior]: (counts[enemy.behavior] ?? 0) + 1 }), {}),
+    enemyTraits: game.enemies.reduce((counts, enemy) => {
+      for (const traitId of enemy.traits) counts[traitId] = (counts[traitId] ?? 0) + 1;
+      return counts;
+    }, {}),
     enemyProjectiles: game.enemyProjectiles.length,
     destructibles: game.destructibles.length,
     consumables: game.consumables.length,
@@ -2085,7 +2321,13 @@ function getTestSnapshot() {
     playerMaxHealth: Math.round(getEffectiveStat("maxHealth")),
     specials: game.enemies
       .filter((enemy) => enemy.rank !== "normal")
-      .map((enemy) => ({ id: enemy.type, rank: enemy.rank, health: Math.round(enemy.health), maxHealth: Math.round(enemy.maxHealth) })),
+      .map((enemy) => ({
+        id: enemy.type,
+        rank: enemy.rank,
+        health: Math.round(enemy.health),
+        maxHealth: Math.round(enemy.maxHealth),
+        traits: [...enemy.traits],
+      })),
     activeBurns: game.enemies.filter((enemy) => enemy.burnRemaining > 0).length,
     activeSlows: game.enemies.filter((enemy) => enemy.slowRemaining > 0).length,
     metrics: { ...game.metrics },
@@ -2102,6 +2344,7 @@ function getTestSnapshot() {
     settings: { ...progress.settings },
     floatingTexts: game.floatingTexts.length,
     shakeTime: Number(game.shakeTime.toFixed(3)),
+    traitState: { ...game.traitState },
   };
 }
 
@@ -2190,7 +2433,15 @@ ui.resetSaveButton.addEventListener("click", () => {
     ui.resetSaveButton.textContent = "再次点击确认重置";
     return;
   }
-  progress = resetProgress({ testMode: localTestMode, lockedTest: lockedTestProgress, characterIds, weaponIds, itemIds, enemyIds });
+  progress = resetProgress({
+    testMode: localTestMode,
+    lockedTest: lockedTestProgress,
+    characterIds,
+    weaponIds,
+    itemIds,
+    enemyIds,
+    maxDanger: DANGER_LEVELS.length - 1,
+  });
   game.danger = 0;
   persistSettings();
   ui.settingsPanel.hidden = true;
