@@ -2067,9 +2067,13 @@ function getTestSnapshot() {
   return {
     phase: game.phase,
     wave: game.wave,
+    waveTime: Number(game.waveTime.toFixed(2)),
     danger: game.danger,
     level: game.level,
+    experience: game.experience,
     materials: game.materials,
+    waveKills: game.waveKills,
+    totalKills: game.totalKills,
     inventory: game.inventory.map((weapon) => ({ id: weapon.id, rarity: weapon.rarity, damage: Math.round(getWeaponDamage(weapon)) })),
     enemies: game.enemies.length,
     enemyRanks: game.enemies.reduce((counts, enemy) => ({ ...counts, [enemy.rank]: (counts[enemy.rank] ?? 0) + 1 }), {}),
