@@ -66,6 +66,7 @@ const parameters = new URLSearchParams(window.location.search);
 const localTestMode = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname)
   && parameters.get("test") === "1";
 const requestedWaveDuration = Number.parseFloat(parameters.get("waveDuration") || "");
+const requestedStartWave = Number.parseInt(parameters.get("startWave") || "", 10);
 const requestedStartMaterials = Number.parseInt(parameters.get("startMaterials") || "", 10);
 const requestedStartExperience = Number.parseInt(parameters.get("startExperience") || "", 10);
 const requestedShopRarity = Number.parseInt(parameters.get("shopRarity") || "", 10);
@@ -112,6 +113,7 @@ const game = {
   lastFrameTime: 0,
   nextUid: 1,
   testShopOfferIndex: 0,
+  metrics: { attacks: 0, projectiles: 0, explosions: 0, burns: 0, slows: 0, bounces: 0 },
 };
 
 const player = {
@@ -322,7 +324,9 @@ function showCharacterSelection() {
 
 function beginRun(startingWeaponId) {
   ensureAudio();
-  game.wave = 1;
+  game.wave = localTestMode && Number.isFinite(requestedStartWave)
+    ? clamp(requestedStartWave, 1, MAX_WAVES)
+    : 1;
   game.totalTime = 0;
   game.materials = localTestMode && Number.isFinite(requestedStartMaterials)
     ? clamp(requestedStartMaterials, 0, 9999)
@@ -340,6 +344,7 @@ function beginRun(startingWeaponId) {
   game.rerollCost = 1;
   game.shopOffers = [];
   game.testShopOfferIndex = 0;
+  game.metrics = { attacks: 0, projectiles: 0, explosions: 0, burns: 0, slows: 0, bounces: 0 };
   game.inventory = [createWeapon(startingWeaponId)];
   game.items = [];
   game.stats = { ...BASE_STATS };
@@ -412,6 +417,10 @@ function spawnEnemy() {
     damage: base.damage * definition.damageMultiplier,
     material: base.material,
     hitFlash: 0,
+    burnRemaining: 0,
+    burnDamage: 0,
+    slowRemaining: 0,
+    slowFactor: 1,
   });
 }
 
@@ -440,6 +449,7 @@ function fireWeapon(instance) {
   const directionY = dy / length;
   player.facingX = directionX;
   player.facingY = directionY;
+  game.metrics.attacks += 1;
 
   if (definition.type === "melee") {
     const damage = getWeaponDamage(instance);
@@ -454,25 +464,98 @@ function fireWeapon(instance) {
     for (let index = game.enemies.length - 1; index >= 0; index -= 1) {
       const enemy = game.enemies[index];
       if (distanceSquared(player, enemy) <= (range + enemy.radius) ** 2) {
+        applyWeaponStatus(enemy, definition);
         damageEnemy(index, damage, definition.knockback, directionX, directionY);
       }
     }
   } else {
-    game.projectiles.push({
-      x: player.x + directionX * player.radius,
-      y: player.y + directionY * player.radius,
-      velocityX: directionX * definition.projectileSpeed,
-      velocityY: directionY * definition.projectileSpeed,
-      radius: definition.projectileSize ?? 5,
-      damage: getWeaponDamage(instance),
-      knockback: definition.knockback,
-      color: definition.projectileColor ?? RARITIES[instance.rarity - 1].color,
-      remainingLife: range / definition.projectileSpeed + 0.25,
-      remainingPierce: definition.pierce ?? 0,
-      hitIds: new Set(),
-    });
+    const projectileCount = definition.projectileCount ?? 1;
+    const startingAngle = Math.atan2(directionY, directionX);
+    for (let projectileIndex = 0; projectileIndex < projectileCount; projectileIndex += 1) {
+      const offset = projectileIndex - (projectileCount - 1) / 2;
+      const angle = startingAngle + offset * (definition.spread ?? 0);
+      const projectileDirectionX = Math.cos(angle);
+      const projectileDirectionY = Math.sin(angle);
+      game.projectiles.push({
+        x: player.x + projectileDirectionX * player.radius,
+        y: player.y + projectileDirectionY * player.radius,
+        velocityX: projectileDirectionX * definition.projectileSpeed,
+        velocityY: projectileDirectionY * definition.projectileSpeed,
+        radius: definition.projectileSize ?? 5,
+        damage: getWeaponDamage(instance),
+        knockback: definition.knockback,
+        color: definition.projectileColor ?? RARITIES[instance.rarity - 1].color,
+        remainingLife: range / definition.projectileSpeed + 0.25,
+        remainingPierce: definition.pierce ?? 0,
+        remainingBounces: definition.bounces ?? 0,
+        explosionRadius: definition.explosionRadius ?? 0,
+        burnDamage: definition.burnDamage ?? 0,
+        burnDuration: definition.burnDuration ?? 0,
+        slowFactor: definition.slowFactor ?? 1,
+        slowDuration: definition.slowDuration ?? 0,
+        hitIds: new Set(),
+      });
+      game.metrics.projectiles += 1;
+    }
   }
   playSound("shoot");
+  return true;
+}
+
+function applyWeaponStatus(enemy, source) {
+  if (source.burnDamage > 0 && source.burnDuration > 0) {
+    const burnDamage = source.burnDamage + Math.max(0, getEffectiveStat("elementalDamage")) * 0.18;
+    enemy.burnDamage = Math.max(enemy.burnDamage ?? 0, burnDamage);
+    enemy.burnRemaining = Math.max(enemy.burnRemaining ?? 0, source.burnDuration);
+    game.metrics.burns += 1;
+  }
+  if (source.slowFactor < 1 && source.slowDuration > 0) {
+    enemy.slowFactor = Math.min(enemy.slowFactor ?? 1, source.slowFactor);
+    enemy.slowRemaining = Math.max(enemy.slowRemaining ?? 0, source.slowDuration);
+    game.metrics.slows += 1;
+  }
+}
+
+function damageArea(projectile, directTarget) {
+  if (projectile.explosionRadius <= 0) return;
+  game.metrics.explosions += 1;
+  const targets = [...game.enemies];
+  createBurst(projectile.x, projectile.y, projectile.color, 18);
+  for (const target of targets) {
+    if (target === directTarget) continue;
+    const hitRadius = projectile.explosionRadius + target.radius;
+    if (distanceSquared(projectile, target) > hitRadius * hitRadius) continue;
+    const currentIndex = game.enemies.indexOf(target);
+    if (currentIndex < 0) continue;
+    const dx = target.x - projectile.x;
+    const dy = target.y - projectile.y;
+    const length = Math.hypot(dx, dy) || 1;
+    applyWeaponStatus(target, projectile);
+    damageEnemy(currentIndex, projectile.damage * 0.58, projectile.knockback * 0.65, dx / length, dy / length);
+  }
+}
+
+function redirectBounce(projectile) {
+  if (projectile.remainingBounces <= 0) return false;
+  let target = null;
+  let nearestDistance = 260 * 260;
+  for (const enemy of game.enemies) {
+    if (projectile.hitIds.has(enemy)) continue;
+    const currentDistance = distanceSquared(projectile, enemy);
+    if (currentDistance < nearestDistance) {
+      target = enemy;
+      nearestDistance = currentDistance;
+    }
+  }
+  if (!target) return false;
+  const speed = Math.hypot(projectile.velocityX, projectile.velocityY) || 1;
+  const dx = target.x - projectile.x;
+  const dy = target.y - projectile.y;
+  const length = Math.hypot(dx, dy) || 1;
+  projectile.velocityX = dx / length * speed;
+  projectile.velocityY = dy / length * speed;
+  projectile.remainingBounces -= 1;
+  game.metrics.bounces += 1;
   return true;
 }
 
@@ -580,7 +663,10 @@ function updateProjectiles(deltaTime) {
       if (distanceSquared(projectile, enemy) > hitDistance * hitDistance) continue;
       projectile.hitIds.add(enemy);
       const speed = Math.hypot(projectile.velocityX, projectile.velocityY) || 1;
+      applyWeaponStatus(enemy, projectile);
       damageEnemy(enemyIndex, projectile.damage, projectile.knockback, projectile.velocityX / speed, projectile.velocityY / speed);
+      damageArea(projectile, enemy);
+      if (redirectBounce(projectile)) break;
       if (projectile.remainingPierce > 0) projectile.remainingPierce -= 1;
       else shouldRemove = true;
     }
@@ -590,12 +676,24 @@ function updateProjectiles(deltaTime) {
 }
 
 function updateEnemies(deltaTime) {
-  for (const enemy of game.enemies) {
+  for (let enemyIndex = game.enemies.length - 1; enemyIndex >= 0; enemyIndex -= 1) {
+    const enemy = game.enemies[enemyIndex];
+    if (enemy.burnRemaining > 0) {
+      enemy.burnRemaining = Math.max(0, enemy.burnRemaining - deltaTime);
+      enemy.health -= enemy.burnDamage * deltaTime;
+      if (enemy.health <= 0) {
+        defeatEnemy(enemyIndex);
+        continue;
+      }
+    }
+    if (enemy.slowRemaining > 0) enemy.slowRemaining = Math.max(0, enemy.slowRemaining - deltaTime);
+    else enemy.slowFactor = 1;
     const dx = player.x - enemy.x;
     const dy = player.y - enemy.y;
     const length = Math.hypot(dx, dy) || 1;
-    enemy.x += dx / length * enemy.speed * deltaTime;
-    enemy.y += dy / length * enemy.speed * deltaTime;
+    const movementMultiplier = enemy.slowRemaining > 0 ? enemy.slowFactor : 1;
+    enemy.x += dx / length * enemy.speed * movementMultiplier * deltaTime;
+    enemy.y += dy / length * enemy.speed * movementMultiplier * deltaTime;
     enemy.hitFlash = Math.max(0, enemy.hitFlash - deltaTime);
     const touchDistance = player.radius + enemy.radius;
     if (distanceSquared(player, enemy) <= touchDistance * touchDistance && player.invulnerableTimer <= 0) {
@@ -1058,6 +1156,20 @@ function drawEnemy(enemy) {
   else context.arc(0, 0, enemy.radius, 0, Math.PI * 2);
   context.fill();
   context.stroke();
+  if (enemy.burnRemaining > 0) {
+    context.strokeStyle = "#ff9b4b";
+    context.lineWidth = 3;
+    context.beginPath();
+    context.arc(0, 0, enemy.radius + 5, 0, Math.PI * 2);
+    context.stroke();
+  }
+  if (enemy.slowRemaining > 0) {
+    context.strokeStyle = "#8de5f4";
+    context.lineWidth = 2;
+    context.beginPath();
+    context.arc(0, 0, enemy.radius + 9, 0, Math.PI * 2);
+    context.stroke();
+  }
   context.fillStyle = "#261b22";
   context.beginPath();
   context.arc(-enemy.radius * .3, -2, 2.5, 0, Math.PI * 2);
@@ -1152,11 +1264,26 @@ function render() {
   }
 }
 
+function getTestSnapshot() {
+  return {
+    phase: game.phase,
+    wave: game.wave,
+    level: game.level,
+    materials: game.materials,
+    inventory: game.inventory.map((weapon) => ({ id: weapon.id, rarity: weapon.rarity, damage: Math.round(getWeaponDamage(weapon)) })),
+    enemies: game.enemies.length,
+    activeBurns: game.enemies.filter((enemy) => enemy.burnRemaining > 0).length,
+    activeSlows: game.enemies.filter((enemy) => enemy.slowRemaining > 0).length,
+    metrics: { ...game.metrics },
+  };
+}
+
 function gameLoop(currentTime) {
   const deltaTime = Math.min((currentTime - game.lastFrameTime) / 1000, 0.05);
   game.lastFrameTime = currentTime;
   if (game.phase === "wave" && !game.paused) updateWave(deltaTime);
   render();
+  if (localTestMode) canvas.dataset.testState = JSON.stringify(getTestSnapshot());
   requestAnimationFrame(gameLoop);
 }
 
@@ -1226,6 +1353,11 @@ window.addEventListener("blur", () => {
 });
 
 showCharacterSelection();
+if (localTestMode) {
+  window.__gameTest = {
+    snapshot: getTestSnapshot,
+  };
+}
 requestAnimationFrame((time) => {
   game.lastFrameTime = time;
   requestAnimationFrame(gameLoop);

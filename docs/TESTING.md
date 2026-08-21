@@ -81,6 +81,7 @@ v2 开发分支可以使用下面的本地测试地址：
 <http://localhost:8000/?test=1&waveDuration=2&startMaterials=100&startExperience=8>
 
 - `waveDuration=2`：把每波临时缩短为 2 秒。
+- `startWave=10`：从指定波次开始，用更密集、更耐打的敌人验证高级武器。
 - `startMaterials=100`：开局获得 100 材料，便于测试购买、刷新和合成。
 - `startExperience=8`：开局积累一次升级，波末会出现四选一。
 - `shopWeapons=1`：四个货架只生成武器。
@@ -111,3 +112,14 @@ v2 开发分支可以使用下面的本地测试地址：
 <http://localhost:8000/?test=1&waveDuration=2&startMaterials=9999&startExperience=8&shopWeapon=seed_launcher&shopRarities=2,2,2,2,1,1,1,1>
 
 先购买一把精良种子发射器，再刷新并购买一把普通种子发射器。背包中的初始普通、精良和新购买的普通武器应连续合成为一把稀有武器，最终仍占一个槽。
+
+### 新武器机制
+
+本地测试模式会把只读运行状态写入游戏画布的 `data-test-state`，其中包含攻击次数、弹丸数、爆炸、燃烧、减速和弹射次数。它只用于复测，不参与正式玩法。
+
+- 余烬法球：运行 6 秒后，`burns` 应大于 0。
+- 熔核果实：运行 6 秒后，`explosions` 和 `burns` 都应大于 0。
+- 霜囊投射器：使用 `startWave=10` 运行后，`slows` 应大于 0。
+- 月芽长弓：使用 `startWave=10` 运行后，`bounces` 应大于 0。
+- 花粉迸射器：`projectiles` 应等于 `attacks` 的 3 倍。
+- 哨戒种核：齿轮培育员开局时伤害应为 18，证明工程属性参与缩放。
