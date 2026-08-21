@@ -2,6 +2,8 @@
 
 这是我的第一个 AI 辅助开发游戏项目。
 
+🎮 **在线游玩：<https://chimingyi.github.io/Brotato/>**
+
 ![薯星幸存者实际游戏画面](docs/screenshots/gameplay.jpg)
 
 游戏会是一款俯视角生存动作游戏：玩家控制一位原创的“薯星探险员”，在不断出现的敌人中生存、收集能量并选择升级。项目会从最小可玩版本开始，一步一步增加功能。
@@ -62,7 +64,7 @@ python3 -m http.server 8000
 
 ## 发布到 GitHub Pages
 
-仓库已经包含 `.github/workflows/deploy-pages.yml`。代码推送到 `main` 后，GitHub Actions 会自动发布游戏；以后更新代码也会自动重新部署。
+游戏已经发布到 <https://chimingyi.github.io/Brotato/>。仓库包含 `.github/workflows/deploy-pages.yml`，代码推送到 `main` 后，GitHub Actions 会自动重新部署。
 
 如果首次部署没有自动启用 Pages，可以手动检查：
 
