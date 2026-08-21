@@ -20,13 +20,13 @@ import {
   WEAPON_TAG_BONUSES,
   WEAPONS,
   getWaveDefinition,
-} from "./data.js?v=2.3.0";
+} from "./data.js?v=2.4.0";
 import {
   loadProgress,
   recordRunProgress,
   resetProgress,
   saveProgress,
-} from "./storage.js?v=2.3.0";
+} from "./storage.js?v=2.4.0";
 
 const $ = (selector) => document.querySelector(selector);
 const canvas = $("#game-canvas");
@@ -130,6 +130,7 @@ const requestedStartRarity = Number.parseInt(parameters.get("startRarity") || ""
 const requestedStartEvolved = localTestMode && parameters.get("startEvolved") === "1";
 const requestedEventId = localTestMode ? parameters.get("event") || "" : "";
 const requestedTalentPoints = Number.parseInt(parameters.get("talentPoints") || "", 10);
+const requestedBossHealth = Number.parseFloat(parameters.get("bossHealth") || "");
 const requestedShopRarity = Number.parseInt(parameters.get("shopRarity") || "", 10);
 const requestedShopWeapon = parameters.get("shopWeapon") || "";
 const requestedShopItem = parameters.get("shopItem") || "";
@@ -143,6 +144,7 @@ const forceItemShop = localTestMode
   && (parameters.get("shopItems") === "1" || ITEMS.some((item) => item.id === requestedShopItem));
 const lockedTestProgress = localTestMode && parameters.get("lockedProgress") === "1";
 const testNoEnemies = localTestMode && parameters.get("noEnemies") === "1";
+const testAutoMove = localTestMode && parameters.get("autoMove") === "1";
 const testSingleTree = localTestMode && parameters.get("treeTest") === "1";
 const requestedEnemyTraits = (parameters.get("enemyTraits") || "")
   .split(",")
@@ -240,6 +242,10 @@ const player = {
   facingY: 0,
   invulnerableTimer: 0,
   regenAccumulator: 0,
+  movePhase: 0,
+  moveStrength: 0,
+  attackFlash: 0,
+  attackAngle: 0,
 };
 
 const audio = {
@@ -280,6 +286,8 @@ function createEmptyMetrics() {
     cursedItemsPurchased: 0,
     curseBonusDrops: 0,
     eliteSkillProcs: 0,
+    bossPhaseChanges: 0,
+    bossSkillProcs: 0,
   };
 }
 
@@ -594,7 +602,9 @@ function renderCollection() {
   const enemyEntries = enemyCatalog.map((enemy) => ({
     icon: enemy.rank === "boss" ? "👑" : enemy.rank === "elite" ? "⚠️" : "👾",
     name: enemy.definition.name,
-    description: enemy.rank === "boss" ? "首领" : enemy.rank === "elite" ? "精英" : "普通敌人",
+    description: enemy.rank === "boss"
+      ? `首领 · 三阶段：${enemy.definition.phases.join(" → ")}`
+      : enemy.rank === "elite" ? "精英" : "普通敌人",
     hint: "在远征中遇见它",
     unlocked: discoveredEnemySet.has(enemy.key),
   }));
@@ -776,6 +786,8 @@ function beginRun(startingWeaponId) {
   game.floatingTexts = [];
   game.shakeTime = 0;
   game.traitState = createTraitState();
+  game.touchX = testAutoMove ? 1 : 0;
+  game.touchY = 0;
   const startingRarity = localTestMode && Number.isFinite(requestedStartRarity)
     ? clamp(requestedStartRarity, 1, 4)
     : origin.weaponRarity ?? 1;
@@ -833,6 +845,10 @@ function startWave() {
   }
   player.invulnerableTimer = 0;
   player.regenAccumulator = 0;
+  player.movePhase = 0;
+  player.moveStrength = 0;
+  player.attackFlash = 0;
+  player.attackAngle = 0;
   game.traitState.stationaryTime = 0;
   spawnDestructibles();
   if (game.waveDefinition.special) spawnSpecialEnemy();
@@ -987,8 +1003,14 @@ function spawnEnemy(type = null, options = {}) {
     eliteSkill: rank === "elite" ? ELITE_SKILLS[enemyType] ?? null : null,
     eliteSkillTimer: rank === "elite" ? (ELITE_SKILLS[enemyType]?.cooldown ?? 0) * 0.65 : 0,
     eliteChargeMultiplier: 1,
+    bossPhase: rank === "boss" ? 1 : 0,
+    bossSkillTimer: rank === "boss" ? 4.8 : 0,
+    bossSkillCooldown: rank === "boss" ? 4.8 : 0,
   };
   applyEnemyTraits(enemy);
+  if (rank === "boss" && localTestMode && Number.isFinite(requestedBossHealth)) {
+    enemy.health = enemy.maxHealth * clamp(requestedBossHealth, 0.05, 1);
+  }
   game.enemies.push(enemy);
   game.encounteredEnemies.add(`${rank}:${enemyType}`);
   if (rank !== "normal") game.metrics.specials += 1;
@@ -1027,6 +1049,8 @@ function fireWeapon(instance) {
   const directionY = dy / length;
   player.facingX = directionX;
   player.facingY = directionY;
+  player.attackFlash = 0.14;
+  player.attackAngle = Math.atan2(directionY, directionX);
   game.metrics.attacks += 1;
   let attackMultiplier = 1;
   if (hasItem("storm_battery")) {
@@ -1314,6 +1338,10 @@ function updatePlayer(deltaTime) {
   const movementSpeed = getMovementSpeed();
   player.x = clamp(player.x + directionX * movementSpeed * deltaTime, player.radius, canvas.width - player.radius);
   player.y = clamp(player.y + directionY * movementSpeed * deltaTime, player.radius + 58, canvas.height - player.radius);
+  const targetMoveStrength = length > 0 ? 1 : 0;
+  player.moveStrength += (targetMoveStrength - player.moveStrength) * Math.min(1, deltaTime * 10);
+  player.movePhase += deltaTime * (length > 0 ? 12 : 3);
+  player.attackFlash = Math.max(0, player.attackFlash - deltaTime);
   player.invulnerableTimer = Math.max(0, player.invulnerableTimer - deltaTime);
 
   if (getEffectiveStat("healthRegen") > 0 && player.health < getEffectiveStat("maxHealth")) {
@@ -1427,7 +1455,9 @@ function hurtPlayer(rawDamage) {
 
 function shootEnemyProjectile(enemy) {
   const definition = enemy.definition;
-  const count = definition.projectileCount ?? 1;
+  const phaseBonus = enemy.type === "storm_core" ? Math.max(0, enemy.bossPhase - 1) * 2 : 0;
+  const count = (definition.projectileCount ?? 1) + phaseBonus;
+  const projectileSpeed = definition.projectileSpeed * (1 + Math.max(0, enemy.bossPhase - 1) * 0.08);
   const baseAngle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
   for (let projectileIndex = 0; projectileIndex < count; projectileIndex += 1) {
     const offset = projectileIndex - (count - 1) / 2;
@@ -1435,31 +1465,102 @@ function shootEnemyProjectile(enemy) {
     game.enemyProjectiles.push({
       x: enemy.x,
       y: enemy.y,
-      velocityX: Math.cos(angle) * definition.projectileSpeed,
-      velocityY: Math.sin(angle) * definition.projectileSpeed,
+      velocityX: Math.cos(angle) * projectileSpeed,
+      velocityY: Math.sin(angle) * projectileSpeed,
       radius: enemy.rank === "boss" ? 8 : 6,
       damage: enemy.damage * getEnemyFrenzyMultiplier(enemy),
       color: definition.light,
+      sourceRank: enemy.rank,
       remainingLife: 4,
     });
     game.metrics.enemyShots += 1;
   }
 }
 
-function shootRadialEnemyProjectiles(enemy, count = 8) {
+function shootRadialEnemyProjectiles(enemy, count = 8, speed = 245, damageMultiplier = 0.72) {
   for (let projectileIndex = 0; projectileIndex < count; projectileIndex += 1) {
     const angle = projectileIndex / count * Math.PI * 2;
     game.enemyProjectiles.push({
       x: enemy.x,
       y: enemy.y,
-      velocityX: Math.cos(angle) * 245,
-      velocityY: Math.sin(angle) * 245,
+      velocityX: Math.cos(angle) * speed,
+      velocityY: Math.sin(angle) * speed,
       radius: 6,
-      damage: enemy.damage * 0.72,
+      damage: enemy.damage * damageMultiplier,
       color: enemy.definition.light,
+      sourceRank: enemy.rank,
       remainingLife: 4,
     });
     game.metrics.enemyShots += 1;
+  }
+}
+
+function getBossPhaseForHealth(enemy) {
+  if (enemy.rank !== "boss") return 0;
+  const healthRatio = enemy.health / enemy.maxHealth;
+  if (healthRatio <= 0.33) return 3;
+  if (healthRatio <= 0.66) return 2;
+  return 1;
+}
+
+function getBossPhaseName(enemy) {
+  return enemy.definition.phases?.[Math.max(0, enemy.bossPhase - 1)] ?? `阶段 ${enemy.bossPhase}`;
+}
+
+function getBossSkillCooldown(enemy) {
+  const baseCooldown = enemy.type === "brood_mother" ? 6.4 : enemy.type === "storm_core" ? 6 : 6.8;
+  return Math.max(3.2, baseCooldown - enemy.bossPhase * 0.8);
+}
+
+function triggerBossSkill(enemy) {
+  if (enemy.type === "brood_mother") {
+    const spawnCount = 1 + enemy.bossPhase;
+    if (game.enemies.length < 84) {
+      for (let amount = 0; amount < spawnCount; amount += 1) {
+        spawnEnemy("mite", {
+          x: enemy.x + (Math.random() - 0.5) * 70,
+          y: enemy.y + (Math.random() - 0.5) * 70,
+        });
+        game.metrics.summons += 1;
+      }
+    }
+  } else if (enemy.type === "storm_core") {
+    shootRadialEnemyProjectiles(enemy, 6 + enemy.bossPhase * 2, 235 + enemy.bossPhase * 18, 0.58);
+  } else if (enemy.type === "stone_titan") {
+    shootRadialEnemyProjectiles(enemy, 4 + enemy.bossPhase * 2, 205 + enemy.bossPhase * 16, 0.68);
+  }
+  createBurst(enemy.x, enemy.y, enemy.definition.light, 12 + enemy.bossPhase * 4);
+  game.metrics.bossSkillProcs += 1;
+}
+
+function updateBossMechanics(enemy, deltaTime) {
+  if (enemy.rank !== "boss") return;
+  const nextPhase = getBossPhaseForHealth(enemy);
+  if (nextPhase > enemy.bossPhase) {
+    game.metrics.bossPhaseChanges += nextPhase - enemy.bossPhase;
+    enemy.bossPhase = nextPhase;
+    game.floatingTexts.push({
+      x: enemy.x,
+      y: enemy.y - enemy.radius - 24,
+      text: `阶段 ${enemy.bossPhase} · ${getBossPhaseName(enemy)}`,
+      color: enemy.bossPhase === 3 ? "#ff9b74" : "#ffe08a",
+      life: 1.6,
+      maxLife: 1.6,
+    });
+    triggerBossSkill(enemy);
+    if (progress.settings.screenShake) {
+      game.shakeTime = Math.max(game.shakeTime, 0.28);
+      game.metrics.shakes += 1;
+    }
+    playSound("wave");
+    enemy.bossSkillCooldown = getBossSkillCooldown(enemy);
+    enemy.bossSkillTimer = enemy.bossSkillCooldown;
+  }
+  enemy.bossSkillCooldown = getBossSkillCooldown(enemy);
+  enemy.bossSkillTimer -= deltaTime;
+  if (enemy.bossSkillTimer <= 0) {
+    triggerBossSkill(enemy);
+    enemy.bossSkillTimer = enemy.bossSkillCooldown;
   }
 }
 
@@ -1536,8 +1637,9 @@ function updateEnemyBehavior(enemy, deltaTime, dx, dy, distance, movementMultipl
   if (enemy.behavior === "charger") {
     if (enemy.chargeRemaining > 0) {
       enemy.chargeRemaining -= deltaTime;
-      enemy.x += enemy.chargeX * definition.chargeSpeed * (enemy.eliteChargeMultiplier ?? 1) * deltaTime;
-      enemy.y += enemy.chargeY * definition.chargeSpeed * (enemy.eliteChargeMultiplier ?? 1) * deltaTime;
+      const bossChargeMultiplier = enemy.rank === "boss" ? 1 + Math.max(0, enemy.bossPhase - 1) * 0.18 : 1;
+      enemy.x += enemy.chargeX * definition.chargeSpeed * (enemy.eliteChargeMultiplier ?? 1) * bossChargeMultiplier * deltaTime;
+      enemy.y += enemy.chargeY * definition.chargeSpeed * (enemy.eliteChargeMultiplier ?? 1) * bossChargeMultiplier * deltaTime;
       if (enemy.chargeRemaining <= 0) enemy.eliteChargeMultiplier = 1;
     } else {
       moveEnemy(enemy, directionX, directionY, movementMultiplier, deltaTime);
@@ -1545,7 +1647,7 @@ function updateEnemyBehavior(enemy, deltaTime, dx, dy, distance, movementMultipl
         enemy.chargeX = directionX;
         enemy.chargeY = directionY;
         enemy.chargeRemaining = 0.55;
-        enemy.actionTimer = definition.chargeCooldown;
+        enemy.actionTimer = definition.chargeCooldown / (enemy.rank === "boss" ? 1 + Math.max(0, enemy.bossPhase - 1) * 0.22 : 1);
         game.metrics.charges += 1;
       }
     }
@@ -1561,7 +1663,7 @@ function updateEnemyBehavior(enemy, deltaTime, dx, dy, distance, movementMultipl
     }
     if (enemy.actionTimer <= 0) {
       shootEnemyProjectile(enemy);
-      enemy.actionTimer = definition.shootCooldown;
+      enemy.actionTimer = definition.shootCooldown / (enemy.rank === "boss" ? 1 + Math.max(0, enemy.bossPhase - 1) * 0.22 : 1);
     }
     return;
   }
@@ -1587,14 +1689,15 @@ function updateEnemyBehavior(enemy, deltaTime, dx, dy, distance, movementMultipl
   if (enemy.behavior === "summoner") {
     moveEnemy(enemy, directionX, directionY, movementMultiplier * 0.65, deltaTime);
     if (enemy.actionTimer <= 0 && game.enemies.length < 90) {
-      for (let amount = 0; amount < definition.summonCount; amount += 1) {
+      const bossSummonBonus = enemy.rank === "boss" ? Math.max(0, enemy.bossPhase - 1) * 2 : 0;
+      for (let amount = 0; amount < definition.summonCount + bossSummonBonus; amount += 1) {
         spawnEnemy(definition.summonType, {
           x: enemy.x + (Math.random() - 0.5) * 50,
           y: enemy.y + (Math.random() - 0.5) * 50,
         });
         game.metrics.summons += 1;
       }
-      enemy.actionTimer = definition.summonCooldown;
+      enemy.actionTimer = definition.summonCooldown / (enemy.rank === "boss" ? 1 + Math.max(0, enemy.bossPhase - 1) * 0.2 : 1);
     }
     return;
   }
@@ -1636,6 +1739,7 @@ function updateEnemies(deltaTime) {
     }
     if (enemy.slowRemaining > 0) enemy.slowRemaining = Math.max(0, enemy.slowRemaining - deltaTime);
     else enemy.slowFactor = 1;
+    updateBossMechanics(enemy, deltaTime);
     const dx = player.x - enemy.x;
     const dy = player.y - enemy.y;
     const length = Math.hypot(dx, dy) || 1;
@@ -2260,8 +2364,14 @@ function updateHud() {
       ? ` · ${special.traits.map((traitId) => ENEMY_TRAITS[traitId].name).join("+")}`
       : "";
     const skillSuffix = special.eliteSkill ? ` · ${special.eliteSkill.icon}${special.eliteSkill.name}` : "";
-    ui.specialName.textContent = `${special.rank === "boss" ? "首领" : "精英"} · ${special.definition.name}${traitSuffix}${skillSuffix}`;
+    const phaseSuffix = special.rank === "boss" ? ` · 阶段 ${special.bossPhase} ${getBossPhaseName(special)}` : "";
+    ui.specialName.textContent = `${special.rank === "boss" ? "首领" : "精英"} · ${special.definition.name}${phaseSuffix}${traitSuffix}${skillSuffix}`;
     ui.specialHealthFill.style.width = `${clamp(special.health / special.maxHealth, 0, 1) * 100}%`;
+    ui.specialHealthFill.style.background = special.rank === "boss" && special.bossPhase === 3
+      ? "linear-gradient(90deg, #dc4f46, #ff7e62)"
+      : special.rank === "boss" && special.bossPhase === 2
+        ? "linear-gradient(90deg, #d86a45, #ffc15e)"
+        : "linear-gradient(90deg, #d85d4d, #f2a25d)";
     ui.specialHealthText.textContent = `${Math.max(0, Math.ceil(special.health))} / ${Math.ceil(special.maxHealth)}`;
   }
   renderWeaponBar();
@@ -2453,6 +2563,26 @@ function drawEnemy(enemy) {
     context.arc(0, 0, enemy.radius + 8, 0, Math.PI * 2);
     context.stroke();
   }
+  if (enemy.rank === "boss") {
+    const phaseColors = ["#ffe08a", "#ffad66", "#ff6f61"];
+    const phaseColor = phaseColors[Math.max(0, enemy.bossPhase - 1)];
+    const pulse = 1 + Math.sin(game.totalTime * (2 + enemy.bossPhase)) * 0.03;
+    context.globalAlpha = 0.5 + enemy.bossPhase * 0.12;
+    context.strokeStyle = phaseColor;
+    context.lineWidth = 3 + enemy.bossPhase;
+    context.beginPath();
+    context.arc(0, 0, (enemy.radius + 14) * pulse, 0, Math.PI * 2);
+    context.stroke();
+    context.globalAlpha = 1;
+    const skillProgress = enemy.bossSkillCooldown > 0
+      ? clamp(1 - enemy.bossSkillTimer / enemy.bossSkillCooldown, 0, 1)
+      : 0;
+    context.strokeStyle = "rgba(255,255,255,.8)";
+    context.lineWidth = 2;
+    context.beginPath();
+    context.arc(0, 0, enemy.radius + 20, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * skillProgress);
+    context.stroke();
+  }
   if (enemy.shieldHits > 0) {
     context.strokeStyle = ENEMY_TRAITS.shielded.color;
     context.lineWidth = 3;
@@ -2536,13 +2666,29 @@ function drawDestructible(destructible) {
 
 function drawPlayer() {
   const character = game.selectedCharacter ?? CHARACTERS[0];
+  const stride = Math.sin(player.movePhase);
+  const bob = Math.abs(stride) * -2.4 * player.moveStrength;
+  const squash = stride * 0.035 * player.moveStrength;
   context.save();
   context.translate(player.x, player.y);
-  if (player.invulnerableTimer > 0 && Math.floor(player.invulnerableTimer * 20) % 2 === 0) context.globalAlpha = .45;
   context.fillStyle = "rgba(0,0,0,.28)";
   context.beginPath();
-  context.ellipse(0, 20, 23, 8, 0, 0, Math.PI * 2);
+  context.ellipse(0, 20, 23 - player.moveStrength * 2, 8, 0, 0, Math.PI * 2);
   context.fill();
+  context.translate(0, bob);
+  context.scale(1 + squash, 1 - squash);
+  if (player.invulnerableTimer > 0 && Math.floor(player.invulnerableTimer * 20) % 2 === 0) context.globalAlpha = .45;
+
+  context.strokeStyle = "#4c3223";
+  context.lineWidth = 6;
+  context.lineCap = "round";
+  context.beginPath();
+  context.moveTo(-9, 18);
+  context.lineTo(-10 + stride * 5 * player.moveStrength, 27);
+  context.moveTo(9, 18);
+  context.lineTo(10 - stride * 5 * player.moveStrength, 27);
+  context.stroke();
+
   context.fillStyle = character.color;
   context.strokeStyle = "#70472e";
   context.lineWidth = 3;
@@ -2550,16 +2696,42 @@ function drawPlayer() {
   context.ellipse(0, 0, 21, 26, -.08, 0, Math.PI * 2);
   context.fill();
   context.stroke();
+  context.fillStyle = "rgba(255,255,255,.12)";
+  context.beginPath();
+  context.ellipse(-7, -9, 7, 10, -.35, 0, Math.PI * 2);
+  context.fill();
   context.fillStyle = "#81aa58";
   context.beginPath();
-  context.ellipse(-4, -29, 7, 12, -.6, 0, Math.PI * 2);
-  context.ellipse(6, -28, 6, 10, .7, 0, Math.PI * 2);
+  context.ellipse(-4, -29, 7, 12, -.6 + stride * .08, 0, Math.PI * 2);
+  context.ellipse(6, -28, 6, 10, .7 - stride * .08, 0, Math.PI * 2);
   context.fill();
+
+  context.fillStyle = "rgba(54,35,24,.58)";
+  context.font = "11px system-ui";
+  context.textAlign = "center";
+  context.fillText(character.icon, 0, 13);
   context.fillStyle = "#241a13";
   context.beginPath();
   context.arc(-7 + player.facingX * 2, -3 + player.facingY, 2.6, 0, Math.PI * 2);
   context.arc(7 + player.facingX * 2, -3 + player.facingY, 2.6, 0, Math.PI * 2);
   context.fill();
+
+  if (player.attackFlash > 0) {
+    const flash = player.attackFlash / 0.14;
+    const directionX = Math.cos(player.attackAngle);
+    const directionY = Math.sin(player.attackAngle);
+    context.globalAlpha = Math.min(1, flash * 1.8);
+    context.strokeStyle = "#fff1ae";
+    context.lineWidth = 4 + flash * 3;
+    context.beginPath();
+    context.moveTo(directionX * 17, directionY * 17);
+    context.lineTo(directionX * (31 + flash * 8), directionY * (31 + flash * 8));
+    context.stroke();
+    context.fillStyle = "#fff7cf";
+    context.beginPath();
+    context.arc(directionX * 34, directionY * 34, 3 + flash * 3, 0, Math.PI * 2);
+    context.fill();
+  }
   context.restore();
 }
 
@@ -2601,22 +2773,69 @@ function drawCombatObjects() {
     context.restore();
   }
   for (const projectile of game.projectiles) {
+    const velocityLength = Math.hypot(projectile.velocityX, projectile.velocityY) || 1;
+    const directionX = projectile.velocityX / velocityLength;
+    const directionY = projectile.velocityY / velocityLength;
+    context.save();
+    context.translate(projectile.x, projectile.y);
+    context.globalAlpha = 0.35;
+    context.strokeStyle = projectile.color;
+    context.lineWidth = projectile.radius * 1.4;
+    context.lineCap = "round";
+    context.beginPath();
+    context.moveTo(-directionX * (8 + projectile.radius), -directionY * (8 + projectile.radius));
+    context.lineTo(0, 0);
+    context.stroke();
+    context.globalAlpha = 1;
     context.fillStyle = projectile.color;
-    context.strokeStyle = "rgba(255,255,255,.65)";
+    context.strokeStyle = "rgba(255,255,255,.78)";
     context.lineWidth = 1.5;
     context.beginPath();
-    context.arc(projectile.x, projectile.y, projectile.radius, 0, Math.PI * 2);
+    if (projectile.weaponType === "engineering") {
+      context.rotate(game.totalTime * 8);
+      context.rect(-projectile.radius, -projectile.radius, projectile.radius * 2, projectile.radius * 2);
+    } else {
+      context.arc(0, 0, projectile.radius, 0, Math.PI * 2);
+    }
     context.fill();
     context.stroke();
+    if (projectile.explosionRadius > 0 || projectile.burnDamage > 0 || projectile.slowFactor < 1) {
+      context.strokeStyle = projectile.slowFactor < 1 ? "#8de5f4" : projectile.burnDamage > 0 ? "#ff9b4b" : "#ffe27a";
+      context.globalAlpha = 0.75;
+      context.lineWidth = 2;
+      context.beginPath();
+      context.arc(0, 0, projectile.radius + 4, 0, Math.PI * 2);
+      context.stroke();
+    }
+    context.restore();
   }
   for (const projectile of game.enemyProjectiles) {
+    const velocityLength = Math.hypot(projectile.velocityX, projectile.velocityY) || 1;
+    const directionX = projectile.velocityX / velocityLength;
+    const directionY = projectile.velocityY / velocityLength;
+    context.save();
+    context.translate(projectile.x, projectile.y);
+    context.strokeStyle = projectile.color;
+    context.globalAlpha = 0.4;
+    context.lineWidth = projectile.radius;
+    context.beginPath();
+    context.moveTo(-directionX * (10 + projectile.radius), -directionY * (10 + projectile.radius));
+    context.lineTo(0, 0);
+    context.stroke();
+    context.globalAlpha = 1;
     context.fillStyle = projectile.color;
     context.strokeStyle = "rgba(255,255,255,.7)";
-    context.lineWidth = 1.5;
+    context.lineWidth = projectile.sourceRank === "boss" ? 2.5 : 1.5;
     context.beginPath();
-    context.arc(projectile.x, projectile.y, projectile.radius, 0, Math.PI * 2);
+    if (projectile.sourceRank === "boss") {
+      context.rotate(Math.PI / 4 + game.totalTime * 1.5);
+      context.rect(-projectile.radius, -projectile.radius, projectile.radius * 2, projectile.radius * 2);
+    } else {
+      context.arc(0, 0, projectile.radius, 0, Math.PI * 2);
+    }
     context.fill();
     context.stroke();
+    context.restore();
   }
   for (const effect of game.meleeEffects) {
     context.strokeStyle = effect.color;
@@ -2714,6 +2933,11 @@ function getTestSnapshot() {
     consumables: game.consumables.length,
     playerHealth: Math.round(player.health),
     playerMaxHealth: Math.round(getEffectiveStat("maxHealth")),
+    playerAnimation: {
+      movePhase: Number(player.movePhase.toFixed(2)),
+      moveStrength: Number(player.moveStrength.toFixed(2)),
+      attackFlash: Number(player.attackFlash.toFixed(2)),
+    },
     specials: game.enemies
       .filter((enemy) => enemy.rank !== "normal")
       .map((enemy) => ({
@@ -2724,6 +2948,9 @@ function getTestSnapshot() {
         traits: [...enemy.traits],
         eliteSkill: enemy.eliteSkill?.name ?? null,
         eliteSkillTimer: Number((enemy.eliteSkillTimer ?? 0).toFixed(2)),
+        bossPhase: enemy.bossPhase,
+        bossPhaseName: enemy.rank === "boss" ? getBossPhaseName(enemy) : null,
+        bossSkillTimer: Number((enemy.bossSkillTimer ?? 0).toFixed(2)),
       })),
     activeBurns: game.enemies.filter((enemy) => enemy.burnRemaining > 0).length,
     activeSlows: game.enemies.filter((enemy) => enemy.slowRemaining > 0).length,

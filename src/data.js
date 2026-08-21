@@ -594,9 +594,9 @@ export const ELITE_SKILLS = {
 };
 
 export const BOSS_ARCHETYPES = {
-  brood_mother: { name: "万巢母体", behavior: "summoner", color: "#6d7438", light: "#d8df6b", radius: 54, health: 3200, speed: 34, damage: 28, armor: 8, summonCooldown: 1.9, summonType: "mite", summonCount: 6, material: 60 },
-  storm_core: { name: "风暴星核", behavior: "ranged", color: "#5351a8", light: "#aab7ff", radius: 50, health: 2850, speed: 46, damage: 22, armor: 6, shootCooldown: 0.85, projectileSpeed: 330, projectileCount: 7, preferredRange: 320, material: 60 },
-  stone_titan: { name: "岩根泰坦", behavior: "charger", color: "#4c5957", light: "#a9bbb4", radius: 60, health: 3900, speed: 31, damage: 36, armor: 15, chargeCooldown: 2.2, chargeSpeed: 390, material: 70 },
+  brood_mother: { name: "万巢母体", behavior: "summoner", color: "#6d7438", light: "#d8df6b", radius: 54, health: 3200, speed: 34, damage: 28, armor: 8, summonCooldown: 1.9, summonType: "mite", summonCount: 6, material: 60, phases: ["育巢", "急速孵化", "母巢暴走"] },
+  storm_core: { name: "风暴星核", behavior: "ranged", color: "#5351a8", light: "#aab7ff", radius: 50, health: 2850, speed: 46, damage: 22, armor: 6, shootCooldown: 0.85, projectileSpeed: 330, projectileCount: 7, preferredRange: 320, material: 60, phases: ["聚电", "雷幕", "超载风暴"] },
+  stone_titan: { name: "岩根泰坦", behavior: "charger", color: "#4c5957", light: "#a9bbb4", radius: 60, health: 3900, speed: 31, damage: 36, armor: 15, chargeCooldown: 2.2, chargeSpeed: 390, material: 70, phases: ["踏地", "裂岩冲锋", "地脉震怒"] },
 };
 
 export const ENEMY_TRAITS = {

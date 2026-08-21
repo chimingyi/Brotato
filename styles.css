@@ -307,10 +307,12 @@ footer { padding-top: 10px; text-align: center; }
   .shop-offers { grid-template-columns: repeat(2, 1fr); }
   .inventory-grid { grid-template-columns: repeat(3, 1fr); }
   .hud { gap: 4px; }
-  .stat-card { min-width: 56px; padding: 5px 7px; }
-  .stat-card--health { min-width: 112px; grid-template-columns: 1fr; gap: 0; }
+  .stat-card { min-width: 0; flex: 1; padding: 5px 6px; }
+  .stat-card strong { white-space: nowrap; font-size: 11px; }
+  .stat-card--health { min-width: 0; flex: 1.35; grid-template-columns: 1fr; gap: 0; }
+  #wave-text { font-size: 10px; }
   .health-track { display: none; }
-  .weapon-bar { top: 55px; }
+  .weapon-bar { top: 66px; }
   .mini-weapon { width: 30px; height: 30px; font-size: 15px; }
 }
 

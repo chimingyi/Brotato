@@ -284,6 +284,43 @@ v2 开发分支可以使用下面的本地测试地址：
 - 第 20 波继续到第 25 波时，`runs=1`、`wins=1` 保持不变，`bestEndlessWave=25`，天赋点只增加 1。
 - 三个 JavaScript 文件均通过 `node --check`，数据引用检查和 `git diff --check` 通过。
 
+## 13. v2.4 动态战斗与首领阶段测试
+
+### 角色移动与攻击动画
+
+<http://localhost:8000/?test=1&waveDuration=20&invincible=1&autoMove=1>
+
+- `autoMove=1` 只在本地测试中让角色持续向右移动，便于稳定检查动画。
+- 测试快照的 `playerAnimation.moveStrength` 应从 0 平滑提高到 1，`movePhase` 应持续变化。
+- 自动攻击时 `attackFlash` 会短暂变为 0.14，远程弹丸应显示与飞行方向相反的尾迹。
+- 工程弹丸显示为旋转方块；燃烧、减速和爆破弹丸拥有不同颜色的外圈。
+
+### 首领阶段快速测试
+
+`bossHealth` 仅在本地测试模式生效，用来指定首领的初始生命比例：
+
+- 万巢母体第三阶段：<http://localhost:8000/?test=1&startWave=20&danger=0&bossHealth=0.30&waveDuration=30&noEnemies=1&invincible=1>
+- 风暴星核第三阶段：<http://localhost:8000/?test=1&startWave=20&danger=1&bossHealth=0.30&waveDuration=30&noEnemies=1&invincible=1>
+- 岩根泰坦第三阶段：<http://localhost:8000/?test=1&startWave=20&danger=2&bossHealth=0.30&waveDuration=30&noEnemies=1&invincible=1>
+
+预期结果：
+
+- `bossPhase=3`，阶段名依次为“母巢暴走”“超载风暴”“地脉震怒”。
+- 从满生命直接设置到 30% 会跨过两个阶段，因此 `bossPhaseChanges=2`。
+- 每种首领至少触发一次阶段技能，`bossSkillProcs > 0`。
+- 万巢母体增加召唤数量；风暴星核增加扇形与环形弹幕；岩根泰坦加快冲锋并释放地脉弹。
+- 首领生命条显示阶段名称，首领外圈颜色和技能蓄力环随阶段变化。
+
+### v2.4 完整回归结果
+
+- 从第 1 波连续运行到第 20 波，19 次下一波跳转均唯一；第 5、10、15 波事件各有 3 个选择。
+- 第 20 波正常显示第一阶段万巢母体，结算后 `runs=1`、`wins=1`。
+- 继续无尽并抵达第 25 波，生成第一阶段岩根泰坦；`bestEndlessWave=25`，局数和胜场仍为 1。
+- 390 × 844 视口中页面宽度为 390，没有横向滚动；HUD、武器栏和首领生命条互不重叠。
+- 手机端 `20 / 20 · D2` 保持单行，第三阶段首领名称完整显示。
+- D6 第三阶段万巢母体运行 8 秒后为 73 个敌人，没有超过 90 个召唤软上限，也没有出现脚本错误。
+- 所有专项页、完整回归页和手机页的浏览器日志均为 0 条。
+
 ### 星域事件
 
 <http://localhost:8000/?test=1&startWave=5&waveDuration=2&noEnemies=1&startMaterials=30&event=wandering_trader>
