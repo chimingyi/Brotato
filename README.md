@@ -62,12 +62,14 @@ python3 -m http.server 8000
 
 ## 发布到 GitHub Pages
 
-代码推送到 GitHub 后：
+仓库已经包含 `.github/workflows/deploy-pages.yml`。代码推送到 `main` 后，GitHub Actions 会自动发布游戏；以后更新代码也会自动重新部署。
+
+如果首次部署没有自动启用 Pages，可以手动检查：
 
 1. 打开仓库的 `Settings`。
 2. 在左侧选择 `Pages`。
-3. `Build and deployment` 选择 `Deploy from a branch`。
-4. 分支选择 `main`，文件夹选择 `/ (root)`，点击 `Save`。
-5. 等待几分钟，GitHub 会显示可以访问的游戏网址。
+3. 在 `Build and deployment` 的 `Source` 中选择 `GitHub Actions`。
+4. 打开仓库的 `Actions` 页面，查看“部署游戏到 GitHub Pages”。
+5. 等待工作流显示绿色对勾，游戏网址为 <https://chimingyi.github.io/Brotato/>。
 
-当前代码已经推送到 [chimingyi/Brotato](https://github.com/chimingyi/Brotato)。仓库目前是私有状态；开启 GitHub Pages 前，需要由仓库所有者确认是否公开发布。
+当前代码仓库：[chimingyi/Brotato](https://github.com/chimingyi/Brotato)。

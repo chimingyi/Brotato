@@ -217,3 +217,12 @@
 - 已保存真实浏览器运行截图 `docs/screenshots/gameplay.jpg`。
 
 完整复测方法见 `docs/TESTING.md`。
+
+## 2026-08-21｜配置 GitHub Pages 自动发布
+
+- 仓库所有者已手动把 `chimingyi/Brotato` 从私有改为公开。
+- 匿名访问仓库页面和 `index.html` 原始文件均成功，公开状态已验证。
+- 新增 `.github/workflows/deploy-pages.yml`。
+- 工作流只拥有读取代码、写入 Pages 和获取部署身份令牌所需的最小权限。
+- 每次推送 `main` 都会自动打包项目根目录并部署；也可以在 Actions 页面手动运行。
+- 预期游戏地址：<https://chimingyi.github.io/Brotato/>。
