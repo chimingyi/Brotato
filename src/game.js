@@ -4,6 +4,7 @@ import {
   CHARACTERS,
   DANGER_LEVELS,
   ELITE_ARCHETYPES,
+  ELITE_SKILLS,
   ENEMY_ARCHETYPES,
   ENEMY_TRAITS,
   ITEMS,
@@ -11,7 +12,9 @@ import {
   MAX_WAVES,
   MAX_WEAPON_SLOTS,
   RARITIES,
+  SPECIAL_EVENTS,
   STAT_LABELS,
+  WEAPON_EVOLUTIONS,
   WEAPON_TAG_BONUSES,
   WEAPONS,
   getWaveDefinition,
@@ -70,6 +73,10 @@ const ui = {
   upgradePanel: $("#upgrade-panel"),
   upgradeOptions: $("#upgrade-options"),
   upgradeRemaining: $("#upgrade-remaining"),
+  eventPanel: $("#event-panel"),
+  eventTitle: $("#event-title"),
+  eventCopy: $("#event-copy"),
+  eventChoices: $("#event-choices"),
   shopPanel: $("#shop-panel"),
   shopTitle: $("#shop-title"),
   waveSummary: $("#wave-summary"),
@@ -110,6 +117,9 @@ const requestedStartExperience = Number.parseInt(parameters.get("startExperience
 const requestedUpgradeRarity = Number.parseInt(parameters.get("upgradeRarity") || "", 10);
 const requestedStartItems = (parameters.get("startItems") || "").split(",").filter(Boolean);
 const requestedStartHealth = Number.parseFloat(parameters.get("startHealth") || "");
+const requestedStartRarity = Number.parseInt(parameters.get("startRarity") || "", 10);
+const requestedStartEvolved = localTestMode && parameters.get("startEvolved") === "1";
+const requestedEventId = localTestMode ? parameters.get("event") || "" : "";
 const requestedShopRarity = Number.parseInt(parameters.get("shopRarity") || "", 10);
 const requestedShopWeapon = parameters.get("shopWeapon") || "";
 const requestedShopItem = parameters.get("shopItem") || "";
@@ -176,6 +186,8 @@ const game = {
   pendingUpgrades: 0,
   rerollCost: 1,
   shopOffers: [],
+  completedEvents: [],
+  activeEvent: null,
   inventory: [],
   items: [],
   stats: { ...BASE_STATS },
@@ -247,6 +259,11 @@ function createEmptyMetrics() {
     itemTraitProcs: 0,
     enemyTraitSpawns: 0,
     enemyTraitExplosions: 0,
+    weaponEvolutions: 0,
+    eventsResolved: 0,
+    cursedItemsPurchased: 0,
+    curseBonusDrops: 0,
+    eliteSkillProcs: 0,
   };
 }
 
@@ -382,23 +399,41 @@ function getEffectiveStat(stat) {
   return limits[stat] ? clamp(value, limits[stat][0], limits[stat][1]) : value;
 }
 
-function createWeapon(id, rarity = 1) {
-  return { uid: game.nextUid++, id, rarity, cooldown: 0 };
+function createWeapon(id, rarity = 1, evolved = false) {
+  return { uid: game.nextUid++, id, rarity, evolved: evolved && Boolean(WEAPON_EVOLUTIONS[id]), cooldown: 0 };
+}
+
+function getWeaponEvolution(instance) {
+  return instance.evolved ? WEAPON_EVOLUTIONS[instance.id] ?? null : null;
+}
+
+function getWeaponDisplay(instance) {
+  const definition = WEAPONS[instance.id];
+  const evolution = getWeaponEvolution(instance);
+  return evolution
+    ? { ...definition, icon: evolution.icon, name: evolution.name, description: evolution.description }
+    : definition;
+}
+
+function getCurseLevel() {
+  return game.items.reduce((total, itemId) => total + (ITEMS.find((item) => item.id === itemId)?.curse ?? 0), 0);
 }
 
 function getWeaponDamage(instance) {
   const definition = WEAPONS[instance.id];
+  const evolution = getWeaponEvolution(instance);
   let damage = definition.baseDamage * RARITIES[instance.rarity - 1].multiplier;
   for (const [stat, scaling] of Object.entries(definition.scaling)) {
     damage += getEffectiveStat(stat) * scaling;
   }
-  return Math.max(1, damage * (1 + getEffectiveStat("damage") / 100));
+  return Math.max(1, damage * (1 + getEffectiveStat("damage") / 100) * (evolution?.damageMultiplier ?? 1));
 }
 
 function getWeaponCooldown(instance) {
   const definition = WEAPONS[instance.id];
+  const evolution = getWeaponEvolution(instance);
   const traitMultiplier = getCharacterTraitId() === "overclock" && definition.type === "engineering" ? 0.8 : 1;
-  return definition.cooldown * traitMultiplier / Math.max(0.2, 1 + getEffectiveStat("attackSpeed") / 100);
+  return definition.cooldown * traitMultiplier * (evolution?.cooldownMultiplier ?? 1) / Math.max(0.2, 1 + getEffectiveStat("attackSpeed") / 100);
 }
 
 function getMovementSpeed() {
@@ -460,7 +495,7 @@ function renderCollection() {
   const characterEntries = CHARACTERS.map((character) => ({
     icon: character.icon,
     name: character.name,
-    description: `${character.trait.name}：${character.trait.description}`,
+    description: `${character.trait.name}：${character.trait.description}；${character.origin.name}：${character.origin.description}`,
     hint: getCharacterUnlockText(character.id),
     unlocked: progress.unlockedCharacters.includes(character.id),
   }));
@@ -478,6 +513,20 @@ function renderCollection() {
     hint: "继续完成远征",
     unlocked: progress.unlockedItems.includes(item.id),
   }));
+  const evolutionEntries = Object.entries(WEAPON_EVOLUTIONS).map(([weaponId, evolution]) => ({
+    icon: evolution.icon,
+    name: evolution.name,
+    description: `${WEAPONS[weaponId].name}进化 · ${evolution.description}`,
+    hint: "解锁对应武器后可查看",
+    unlocked: progress.unlockedWeapons.includes(weaponId),
+  }));
+  const eventEntries = SPECIAL_EVENTS.map((event) => ({
+    icon: event.icon,
+    name: event.name,
+    description: event.description,
+    hint: "在第 5、10、15 波后出现",
+    unlocked: true,
+  }));
   const enemyEntries = enemyCatalog.map((enemy) => ({
     icon: enemy.rank === "boss" ? "👑" : enemy.rank === "elite" ? "⚠️" : "👾",
     name: enemy.definition.name,
@@ -492,12 +541,22 @@ function renderCollection() {
     hint: "提高危险等级后出现",
     unlocked: true,
   }));
+  const eliteSkillEntries = Object.values(ELITE_SKILLS).map((skill) => ({
+    icon: skill.icon,
+    name: skill.name,
+    description: skill.description,
+    hint: "在精英波次中出现",
+    unlocked: true,
+  }));
   ui.collectionContent.replaceChildren(
     createCollectionGroup("探险员", characterEntries),
     createCollectionGroup("武器", weaponEntries),
+    createCollectionGroup("武器进化", evolutionEntries),
     createCollectionGroup("道具", itemEntries),
+    createCollectionGroup("波间事件", eventEntries),
     createCollectionGroup("敌人", enemyEntries),
     createCollectionGroup("敌人变异", enemyTraitEntries),
+    createCollectionGroup("精英技能", eliteSkillEntries),
   );
 }
 
@@ -601,6 +660,7 @@ function showCharacterSelection() {
   ui.loadoutTitle.textContent = "选择探险员";
   ui.loadoutCopy.textContent = "每位探险员都有不同优势。第一次建议选择“嫩芽先锋”。";
   ui.upgradePanel.hidden = true;
+  ui.eventPanel.hidden = true;
   ui.shopPanel.hidden = true;
   ui.gameOverPanel.hidden = true;
   ui.battleHud.hidden = true;
@@ -619,6 +679,7 @@ function showCharacterSelection() {
 
 function beginRun(startingWeaponId) {
   ensureAudio();
+  const origin = game.selectedCharacter.origin ?? {};
   game.wave = localTestMode && Number.isFinite(requestedStartWave)
     ? clamp(requestedStartWave, 1, MAX_WAVES)
     : 1;
@@ -638,6 +699,8 @@ function beginRun(startingWeaponId) {
   }
   game.rerollCost = 1;
   game.shopOffers = [];
+  game.completedEvents = [];
+  game.activeEvent = null;
   game.testShopOfferIndex = 0;
   game.metrics = createEmptyMetrics();
   game.encounteredEnemies = new Set();
@@ -645,12 +708,18 @@ function beginRun(startingWeaponId) {
   game.floatingTexts = [];
   game.shakeTime = 0;
   game.traitState = createTraitState();
-  game.inventory = [createWeapon(startingWeaponId)];
-  game.items = localTestMode
+  const startingRarity = localTestMode && Number.isFinite(requestedStartRarity)
+    ? clamp(requestedStartRarity, 1, 4)
+    : origin.weaponRarity ?? 1;
+  game.inventory = [createWeapon(startingWeaponId, startingRarity, requestedStartEvolved)];
+  const testItems = localTestMode
     ? requestedStartItems.filter((itemId) => ITEMS.some((item) => item.id === itemId))
     : [];
+  game.items = [...new Set([...testItems, ...(origin.itemId ? [origin.itemId] : [])])];
   game.stats = { ...BASE_STATS };
   applyModifiers(game.selectedCharacter.modifiers, false);
+  applyModifiers(origin.modifiers ?? {}, false);
+  game.materials += origin.materials ?? 0;
   for (const itemId of game.items) {
     const item = ITEMS.find((entry) => entry.id === itemId);
     if (item) applyModifiers(item.modifiers, false);
@@ -698,6 +767,7 @@ function startWave() {
 
   ui.loadoutPanel.hidden = true;
   ui.upgradePanel.hidden = true;
+  ui.eventPanel.hidden = true;
   ui.shopPanel.hidden = true;
   ui.gameOverPanel.hidden = true;
   ui.pauseBadge.hidden = true;
@@ -809,6 +879,10 @@ function spawnEnemy(type = null, options = {}) {
   const specialScale = rank === "normal" ? 1 : Math.sqrt(game.waveDefinition.healthMultiplier);
   const healthMultiplier = rank === "normal" ? game.waveDefinition.healthMultiplier : specialScale;
   const damageMultiplier = rank === "normal" ? game.waveDefinition.damageMultiplier : Math.sqrt(game.waveDefinition.damageMultiplier);
+  const curseLevel = getCurseLevel();
+  const curseHealthMultiplier = 1 + curseLevel * 0.025;
+  const curseDamageMultiplier = 1 + curseLevel * 0.015;
+  const curseRewardMultiplier = 1 + curseLevel * 0.04;
   const traits = rollEnemyTraits(base, rank);
   const enemy = {
     uid: game.nextUid++,
@@ -819,12 +893,12 @@ function spawnEnemy(type = null, options = {}) {
     x: spawnPoint.x,
     y: spawnPoint.y,
     radius: base.radius,
-    maxHealth: base.health * healthMultiplier,
-    health: base.health * healthMultiplier,
+    maxHealth: base.health * healthMultiplier * curseHealthMultiplier,
+    health: base.health * healthMultiplier * curseHealthMultiplier,
     speed: base.speed * game.waveDefinition.speedMultiplier,
-    damage: base.damage * damageMultiplier,
+    damage: base.damage * damageMultiplier * curseDamageMultiplier,
     armor: base.armor ?? 0,
-    material: Math.max(1, Math.round(base.material * game.waveDefinition.rewardMultiplier)),
+    material: Math.max(1, Math.round(base.material * game.waveDefinition.rewardMultiplier * curseRewardMultiplier)),
     hitFlash: 0,
     burnRemaining: 0,
     burnDamage: 0,
@@ -837,6 +911,9 @@ function spawnEnemy(type = null, options = {}) {
     orbitDirection: Math.random() < 0.5 ? -1 : 1,
     traits,
     shieldHits: 0,
+    eliteSkill: rank === "elite" ? ELITE_SKILLS[enemyType] ?? null : null,
+    eliteSkillTimer: rank === "elite" ? (ELITE_SKILLS[enemyType]?.cooldown ?? 0) * 0.65 : 0,
+    eliteChargeMultiplier: 1,
   };
   applyEnemyTraits(enemy);
   game.enemies.push(enemy);
@@ -866,7 +943,8 @@ function findNearestEnemy(maxRange = Number.POSITIVE_INFINITY) {
 
 function fireWeapon(instance) {
   const definition = WEAPONS[instance.id];
-  const range = Math.max(45, definition.range + getEffectiveStat("range"));
+  const evolution = getWeaponEvolution(instance);
+  const range = Math.max(45, (definition.range + getEffectiveStat("range")) * (evolution?.rangeMultiplier ?? 1));
   const target = findNearestEnemy(range) ?? findNearestDestructible(range);
   if (!target) return false;
   const dx = target.x - player.x;
@@ -888,6 +966,10 @@ function fireWeapon(instance) {
 
   if (definition.type === "melee") {
     const damage = getWeaponDamage(instance) * attackMultiplier;
+    const meleeKnockback = definition.knockback * (evolution?.knockbackMultiplier ?? 1);
+    const statusSource = evolution?.burnMultiplier
+      ? { ...definition, burnDamage: (definition.burnDamage ?? 0) * evolution.burnMultiplier }
+      : definition;
     game.meleeEffects.push({
       x: player.x,
       y: player.y,
@@ -899,8 +981,8 @@ function fireWeapon(instance) {
     for (let index = game.enemies.length - 1; index >= 0; index -= 1) {
       const enemy = game.enemies[index];
       if (distanceSquared(player, enemy) <= (range + enemy.radius) ** 2) {
-        applyWeaponStatus(enemy, definition);
-        damageEnemy(index, damage, definition.knockback, directionX, directionY, {
+        applyWeaponStatus(enemy, statusSource);
+        damageEnemy(index, damage, meleeKnockback, directionX, directionY, {
           weaponType: definition.type,
           distance: Math.sqrt(distanceSquared(player, enemy)),
         });
@@ -913,7 +995,7 @@ function fireWeapon(instance) {
       }
     }
   } else {
-    const projectileCount = definition.projectileCount ?? 1;
+    const projectileCount = (definition.projectileCount ?? 1) + (evolution?.projectileCountBonus ?? 0);
     const startingAngle = Math.atan2(directionY, directionX);
     for (let projectileIndex = 0; projectileIndex < projectileCount; projectileIndex += 1) {
       const offset = projectileIndex - (projectileCount - 1) / 2;
@@ -931,13 +1013,13 @@ function fireWeapon(instance) {
         radius: definition.projectileSize ?? 5,
         damage: getWeaponDamage(instance) * attackMultiplier,
         weaponType: definition.type,
-        knockback: definition.knockback,
+        knockback: definition.knockback * (evolution?.knockbackMultiplier ?? 1),
         color: definition.projectileColor ?? RARITIES[instance.rarity - 1].color,
         remainingLife: range / definition.projectileSpeed + 0.25,
-        remainingPierce: (definition.pierce ?? 0) + (getCharacterTraitId() === "phase_arrow" ? 1 : 0),
-        remainingBounces: definition.bounces ?? 0,
-        explosionRadius: (definition.explosionRadius ?? 0) * explosionTraitMultiplier,
-        burnDamage: definition.burnDamage ?? 0,
+        remainingPierce: (definition.pierce ?? 0) + (evolution?.pierceBonus ?? 0) + (getCharacterTraitId() === "phase_arrow" ? 1 : 0),
+        remainingBounces: (definition.bounces ?? 0) + (evolution?.bounceBonus ?? 0),
+        explosionRadius: (definition.explosionRadius ?? 0) * explosionTraitMultiplier * (evolution?.explosionRadiusMultiplier ?? 1),
+        burnDamage: (definition.burnDamage ?? 0) * (evolution?.burnMultiplier ?? 1),
         burnDuration: definition.burnDuration ?? 0,
         slowFactor: definition.slowFactor ?? 1,
         slowDuration: definition.slowDuration ?? 0,
@@ -1079,6 +1161,11 @@ function defeatEnemy(index) {
   if (getCharacterTraitId() === "salvage" && Math.random() < 0.22) {
     materialDrops += 1;
     game.metrics.characterTraitProcs += 1;
+  }
+  const curseLevel = getCurseLevel();
+  if (curseLevel > 0 && Math.random() < Math.min(0.6, curseLevel * 0.04)) {
+    materialDrops += 1;
+    game.metrics.curseBonusDrops += 1;
   }
   for (let amount = 0; amount < materialDrops; amount += 1) {
     game.gems.push({
@@ -1286,6 +1373,59 @@ function shootEnemyProjectile(enemy) {
   }
 }
 
+function shootRadialEnemyProjectiles(enemy, count = 8) {
+  for (let projectileIndex = 0; projectileIndex < count; projectileIndex += 1) {
+    const angle = projectileIndex / count * Math.PI * 2;
+    game.enemyProjectiles.push({
+      x: enemy.x,
+      y: enemy.y,
+      velocityX: Math.cos(angle) * 245,
+      velocityY: Math.sin(angle) * 245,
+      radius: 6,
+      damage: enemy.damage * 0.72,
+      color: enemy.definition.light,
+      remainingLife: 4,
+    });
+    game.metrics.enemyShots += 1;
+  }
+}
+
+function updateEliteSkill(enemy, deltaTime, dx, dy, distance) {
+  if (!enemy.eliteSkill) return;
+  enemy.eliteSkillTimer -= deltaTime;
+  if (enemy.eliteSkillTimer > 0) return;
+  let triggered = true;
+  if (enemy.type === "thorn_champion") {
+    enemy.chargeX = dx / distance;
+    enemy.chargeY = dy / distance;
+    enemy.chargeRemaining = 0.7;
+    enemy.eliteChargeMultiplier = 1.45;
+    createBurst(enemy.x, enemy.y, "#ff776d", 14);
+  } else if (enemy.type === "storm_caller") {
+    shootRadialEnemyProjectiles(enemy);
+    createBurst(enemy.x, enemy.y, "#c2b6ff", 16);
+  } else if (enemy.type === "brood_keeper") {
+    if (game.enemies.length < 88) {
+      for (let amount = 0; amount < 2; amount += 1) {
+        spawnEnemy("mite", { x: enemy.x + (Math.random() - 0.5) * 44, y: enemy.y + (Math.random() - 0.5) * 44 });
+        game.metrics.summons += 1;
+      }
+      createBurst(enemy.x, enemy.y, "#b5d66a", 14);
+    } else {
+      triggered = false;
+    }
+  } else if (enemy.type === "iron_colossus") {
+    enemy.shieldHits = Math.min(5, enemy.shieldHits + 2);
+    createBurst(enemy.x, enemy.y, "#a9d8ff", 14);
+  }
+  if (!triggered) {
+    enemy.eliteSkillTimer = 0.5;
+    return;
+  }
+  enemy.eliteSkillTimer = enemy.eliteSkill.cooldown;
+  game.metrics.eliteSkillProcs += 1;
+}
+
 function updateEnemyProjectiles(deltaTime) {
   for (let index = game.enemyProjectiles.length - 1; index >= 0; index -= 1) {
     const projectile = game.enemyProjectiles[index];
@@ -1323,8 +1463,9 @@ function updateEnemyBehavior(enemy, deltaTime, dx, dy, distance, movementMultipl
   if (enemy.behavior === "charger") {
     if (enemy.chargeRemaining > 0) {
       enemy.chargeRemaining -= deltaTime;
-      enemy.x += enemy.chargeX * definition.chargeSpeed * deltaTime;
-      enemy.y += enemy.chargeY * definition.chargeSpeed * deltaTime;
+      enemy.x += enemy.chargeX * definition.chargeSpeed * (enemy.eliteChargeMultiplier ?? 1) * deltaTime;
+      enemy.y += enemy.chargeY * definition.chargeSpeed * (enemy.eliteChargeMultiplier ?? 1) * deltaTime;
+      if (enemy.chargeRemaining <= 0) enemy.eliteChargeMultiplier = 1;
     } else {
       moveEnemy(enemy, directionX, directionY, movementMultiplier, deltaTime);
       if (enemy.actionTimer <= 0) {
@@ -1428,6 +1569,7 @@ function updateEnemies(deltaTime) {
     const slowMultiplier = enemy.slowRemaining > 0 ? enemy.slowFactor : 1;
     const buffMultiplier = getEnemyBuffMultiplier(enemy);
     const frenzyMultiplier = getEnemyFrenzyMultiplier(enemy);
+    updateEliteSkill(enemy, deltaTime, dx, dy, length);
     updateEnemyBehavior(enemy, deltaTime, dx, dy, length, slowMultiplier * buffMultiplier * frenzyMultiplier);
     enemy.hitFlash = Math.max(0, enemy.hitFlash - deltaTime);
     const touchDistance = player.radius + enemy.radius;
@@ -1589,8 +1731,57 @@ function endWave() {
   } else if (game.pendingUpgrades > 0) {
     openUpgradePanel();
   } else {
-    openShop();
+    openPostWaveDestination();
   }
+}
+
+function getWaveEvent() {
+  if (game.wave >= MAX_WAVES || game.wave % 5 !== 0 || game.completedEvents.includes(game.wave)) return null;
+  if (requestedEventId) return SPECIAL_EVENTS.find((event) => event.id === requestedEventId) ?? null;
+  return SPECIAL_EVENTS[(game.wave / 5 - 1) % SPECIAL_EVENTS.length];
+}
+
+function openPostWaveDestination() {
+  const event = getWaveEvent();
+  if (event) openEventPanel(event);
+  else openShop();
+}
+
+function openEventPanel(event) {
+  game.phase = "event";
+  game.activeEvent = event;
+  ui.upgradePanel.hidden = true;
+  ui.shopPanel.hidden = true;
+  ui.eventPanel.hidden = false;
+  ui.eventTitle.textContent = `${event.icon} ${event.name}`;
+  ui.eventCopy.textContent = event.description;
+  ui.eventChoices.replaceChildren();
+  for (const choice of event.choices) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "choice-card event-choice";
+    button.disabled = (choice.materialCost ?? 0) > game.materials;
+    button.innerHTML = `
+      <span class="choice-name">${choice.name}</span>
+      <span class="choice-tagline">${choice.description}</span>
+      ${choice.materialCost ? `<span class="choice-rules">需要 ◆ ${choice.materialCost}</span>` : ""}
+    `;
+    button.addEventListener("click", () => chooseEventChoice(choice));
+    ui.eventChoices.append(button);
+  }
+}
+
+function chooseEventChoice(choice) {
+  if (!game.activeEvent || (choice.materialCost ?? 0) > game.materials) return;
+  game.materials -= choice.materialCost ?? 0;
+  game.materials += choice.materials ?? 0;
+  applyModifiers(choice.modifiers ?? {});
+  game.completedEvents.push(game.wave);
+  game.metrics.eventsResolved += 1;
+  game.activeEvent = null;
+  ui.eventPanel.hidden = true;
+  playSound("buy");
+  openShop();
 }
 
 function rollUpgradeRarity() {
@@ -1623,6 +1814,7 @@ function getUpgradeChoices() {
 function openUpgradePanel() {
   game.phase = "upgrade";
   ui.upgradePanel.hidden = false;
+  ui.eventPanel.hidden = true;
   ui.shopPanel.hidden = true;
   ui.upgradeRemaining.textContent = `还有 ${game.pendingUpgrades} 次升级选择`;
   ui.upgradeOptions.replaceChildren();
@@ -1650,7 +1842,7 @@ function chooseUpgrade(upgrade) {
   if (game.pendingUpgrades > 0) openUpgradePanel();
   else {
     ui.upgradePanel.hidden = true;
-    openShop();
+    openPostWaveDestination();
   }
 }
 
@@ -1740,6 +1932,7 @@ function openShop() {
   game.phase = "shop";
   game.rerollCost = Math.max(1, Math.floor(1 + game.wave * 0.35));
   ui.upgradePanel.hidden = true;
+  ui.eventPanel.hidden = true;
   ui.shopPanel.hidden = false;
   ui.shopTitle.textContent = `D${game.danger} · 第 ${game.wave} 波完成`;
   ui.nextWaveButton.textContent = `开始第 ${game.wave + 1} 波`;
@@ -1792,6 +1985,7 @@ function buyOffer(offerIndex) {
     const item = getOfferDefinition(offer);
     game.items.push(item.id);
     applyModifiers(item.modifiers);
+    if (item.curse) game.metrics.cursedItemsPurchased += 1;
   }
   offer.sold = true;
   offer.locked = false;
@@ -1818,9 +2012,22 @@ function sellWeapon(uid) {
   if (index < 0 || game.inventory.length <= 1) return;
   const instance = game.inventory[index];
   const definition = WEAPONS[instance.id];
-  const refund = Math.max(1, Math.floor(definition.price * RARITIES[instance.rarity - 1].multiplier * 0.45));
+  const evolution = getWeaponEvolution(instance);
+  const refund = Math.max(1, Math.floor((definition.price * RARITIES[instance.rarity - 1].multiplier + (evolution?.cost ?? 0)) * 0.45));
   game.materials += refund;
   game.inventory.splice(index, 1);
+  renderShop();
+}
+
+function evolveWeapon(uid) {
+  const instance = game.inventory.find((weapon) => weapon.uid === uid);
+  const evolution = instance ? WEAPON_EVOLUTIONS[instance.id] : null;
+  if (!instance || !evolution || instance.rarity !== 4 || instance.evolved || game.materials < evolution.cost) return;
+  game.materials -= evolution.cost;
+  instance.evolved = true;
+  instance.cooldown = 0;
+  game.metrics.weaponEvolutions += 1;
+  playSound("level");
   renderShop();
 }
 
@@ -1835,7 +2042,7 @@ function renderShop() {
     const definition = getOfferDefinition(offer);
     const card = document.createElement("article");
     const rarity = RARITIES[offer.rarity - 1];
-    card.className = `shop-card${offer.locked ? " is-locked" : ""}`;
+    card.className = `shop-card${offer.locked ? " is-locked" : ""}${definition.curse ? " is-cursed" : ""}`;
     card.style.setProperty("--rarity", rarity.color);
     if (offer.sold) {
       card.innerHTML = `<span class="choice-icon">✓</span><span class="choice-name">已购买</span>`;
@@ -1844,7 +2051,7 @@ function renderShop() {
         && (offer.type !== "weapon" || canAddWeapon(offer))
         && (offer.type !== "item" || canAddItem(definition));
       card.innerHTML = `
-        <span class="shop-card__type">${offer.type === "weapon" ? `${rarity.name}武器` : "道具"}</span>
+        <span class="shop-card__type">${offer.type === "weapon" ? `${rarity.name}武器` : definition.curse ? `诅咒 ${definition.curse}` : "道具"}</span>
         <span class="choice-icon">${definition.icon}</span>
         <span class="choice-name">${definition.name}</span>
         <span class="choice-tagline">${definition.description}</span>
@@ -1888,11 +2095,23 @@ function renderInventory(container, allowSell) {
       card.className = "inventory-card is-empty";
       card.textContent = "空武器槽";
     } else {
-      const definition = WEAPONS[instance.id];
+      const definition = getWeaponDisplay(instance);
       const rarity = RARITIES[instance.rarity - 1];
       card.className = "inventory-card";
       card.style.setProperty("--rarity", rarity.color);
-      card.innerHTML = `<strong>${definition.icon} ${definition.name}</strong><span>${rarity.name} · 伤害 ${Math.round(getWeaponDamage(instance))}</span>`;
+      card.classList.toggle("is-evolved", instance.evolved);
+      card.innerHTML = `<strong>${definition.icon} ${definition.name}</strong><span>${instance.evolved ? "进化" : rarity.name} · 伤害 ${Math.round(getWeaponDamage(instance))}</span>`;
+      const evolution = WEAPON_EVOLUTIONS[instance.id];
+      if (allowSell && evolution && instance.rarity === 4 && !instance.evolved) {
+        const evolveButton = document.createElement("button");
+        evolveButton.type = "button";
+        evolveButton.className = "evolve-button";
+        evolveButton.textContent = `进化 · ${evolution.cost}`;
+        evolveButton.title = `${evolution.name}：${evolution.description}`;
+        evolveButton.disabled = game.materials < evolution.cost;
+        evolveButton.addEventListener("click", () => evolveWeapon(instance.uid));
+        card.append(evolveButton);
+      }
       if (allowSell && game.inventory.length > 1) {
         const button = document.createElement("button");
         button.type = "button";
@@ -1918,6 +2137,12 @@ function renderStats() {
     value.textContent = stat === "maxHealth" ? Math.round(effectiveValue) : `${effectiveValue >= 0 ? "+" : ""}${Math.round(effectiveValue)}`;
     ui.statsList.append(term, value);
   }
+  const curseTerm = document.createElement("dt");
+  curseTerm.textContent = "诅咒";
+  const curseValue = document.createElement("dd");
+  curseValue.textContent = String(getCurseLevel());
+  curseValue.className = getCurseLevel() > 0 ? "curse-value" : "";
+  ui.statsList.append(curseTerm, curseValue);
 }
 
 function renderWeaponBar() {
@@ -1927,9 +2152,10 @@ function renderWeaponBar() {
     const slot = document.createElement("div");
     slot.className = "mini-weapon";
     if (instance) {
-      slot.textContent = WEAPONS[instance.id].icon;
-      slot.style.setProperty("--rarity", RARITIES[instance.rarity - 1].color);
-      slot.title = `${WEAPONS[instance.id].name} · ${RARITIES[instance.rarity - 1].name}`;
+      const definition = getWeaponDisplay(instance);
+      slot.textContent = definition.icon;
+      slot.style.setProperty("--rarity", instance.evolved ? "#ffca62" : RARITIES[instance.rarity - 1].color);
+      slot.title = `${definition.name} · ${instance.evolved ? "进化" : RARITIES[instance.rarity - 1].name}`;
     } else {
       slot.textContent = "·";
       slot.style.opacity = ".42";
@@ -1954,7 +2180,8 @@ function updateHud() {
     const traitSuffix = special.traits.length > 0
       ? ` · ${special.traits.map((traitId) => ENEMY_TRAITS[traitId].name).join("+")}`
       : "";
-    ui.specialName.textContent = `${special.rank === "boss" ? "首领" : "精英"} · ${special.definition.name}${traitSuffix}`;
+    const skillSuffix = special.eliteSkill ? ` · ${special.eliteSkill.icon}${special.eliteSkill.name}` : "";
+    ui.specialName.textContent = `${special.rank === "boss" ? "首领" : "精英"} · ${special.definition.name}${traitSuffix}${skillSuffix}`;
     ui.specialHealthFill.style.width = `${clamp(special.health / special.maxHealth, 0, 1) * 100}%`;
     ui.specialHealthText.textContent = `${Math.max(0, Math.ceil(special.health))} / ${Math.ceil(special.maxHealth)}`;
   }
@@ -2017,6 +2244,7 @@ function finishRun(won) {
   ui.experienceWrap.hidden = true;
   ui.touchControls.hidden = true;
   ui.upgradePanel.hidden = true;
+  ui.eventPanel.hidden = true;
   ui.shopPanel.hidden = true;
   ui.gameOverPanel.hidden = false;
   ui.resultKicker.textContent = won ? "远征完成" : "远征结束";
@@ -2296,6 +2524,10 @@ function getTestSnapshot() {
     waveKills: game.waveKills,
     totalKills: game.totalKills,
     characterTrait: game.selectedCharacter?.trait ?? null,
+    characterOrigin: game.selectedCharacter?.origin ?? null,
+    curseLevel: getCurseLevel(),
+    activeEvent: game.activeEvent?.id ?? null,
+    completedEvents: [...game.completedEvents],
     ownedItemTraits: game.items
       .map((itemId) => ITEMS.find((item) => item.id === itemId)?.trait)
       .filter(Boolean),
@@ -2304,10 +2536,24 @@ function getTestSnapshot() {
       attackSpeed: Number(getEffectiveStat("attackSpeed").toFixed(2)),
       armor: Number(getEffectiveStat("armor").toFixed(2)),
       speed: Number(getEffectiveStat("speed").toFixed(2)),
+      luck: Number(getEffectiveStat("luck").toFixed(2)),
       harvesting: Number(getEffectiveStat("harvesting").toFixed(2)),
     },
-    inventory: game.inventory.map((weapon) => ({ id: weapon.id, rarity: weapon.rarity, damage: Math.round(getWeaponDamage(weapon)) })),
+    inventory: game.inventory.map((weapon) => ({
+      id: weapon.id,
+      rarity: weapon.rarity,
+      evolved: weapon.evolved,
+      evolution: getWeaponEvolution(weapon)?.name ?? null,
+      damage: Math.round(getWeaponDamage(weapon)),
+    })),
     enemies: game.enemies.length,
+    enemySample: game.enemies[0] ? {
+      id: game.enemies[0].type,
+      health: Number(game.enemies[0].health.toFixed(2)),
+      maxHealth: Number(game.enemies[0].maxHealth.toFixed(2)),
+      damage: Number(game.enemies[0].damage.toFixed(2)),
+      material: game.enemies[0].material,
+    } : null,
     enemyRanks: game.enemies.reduce((counts, enemy) => ({ ...counts, [enemy.rank]: (counts[enemy.rank] ?? 0) + 1 }), {}),
     enemyBehaviors: game.enemies.reduce((counts, enemy) => ({ ...counts, [enemy.behavior]: (counts[enemy.behavior] ?? 0) + 1 }), {}),
     enemyTraits: game.enemies.reduce((counts, enemy) => {
@@ -2327,6 +2573,8 @@ function getTestSnapshot() {
         health: Math.round(enemy.health),
         maxHealth: Math.round(enemy.maxHealth),
         traits: [...enemy.traits],
+        eliteSkill: enemy.eliteSkill?.name ?? null,
+        eliteSkillTimer: Number((enemy.eliteSkillTimer ?? 0).toFixed(2)),
       })),
     activeBurns: game.enemies.filter((enemy) => enemy.burnRemaining > 0).length,
     activeSlows: game.enemies.filter((enemy) => enemy.slowRemaining > 0).length,

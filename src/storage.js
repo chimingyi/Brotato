@@ -116,8 +116,14 @@ export function recordRunProgress(progress, result) {
     }
   }
 
-  const weaponTarget = Math.min(result.weaponIds.length, STARTING_WEAPON_COUNT + Math.floor(progress.bestWave / 3) * 2 + progress.wins * 2);
-  const itemTarget = Math.min(result.itemIds.length, STARTING_ITEM_COUNT + progress.bestWave * 2 + progress.wins * 8);
+  const weaponTarget = Math.min(result.weaponIds.length, Math.max(
+    progress.unlockedWeapons.length,
+    STARTING_WEAPON_COUNT + Math.floor(progress.bestWave / 3) * 2 + progress.wins * 2,
+  ));
+  const itemTarget = Math.min(result.itemIds.length, Math.max(
+    progress.unlockedItems.length,
+    STARTING_ITEM_COUNT + progress.bestWave * 2 + progress.wins * 12,
+  ));
   progress.unlockedWeapons = result.weaponIds.slice(0, weaponTarget);
   progress.unlockedItems = result.itemIds.slice(0, itemTarget);
   progress.discoveredEnemies = [...new Set([...progress.discoveredEnemies, ...result.encounteredEnemyIds])];

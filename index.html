@@ -106,6 +106,10 @@
             <article><strong>7. 角色特性</strong><p>每名探险员都有会改变规则的专属特性，配装时要围绕它发挥优势。</p></article>
             <article><strong>8. 道具触发</strong><p>核心道具除了属性，还可能在首击、闪避、拾取或攻击次数满足条件时触发。</p></article>
             <article><strong>9. 怪物变异</strong><p>D1 起敌人可能获得硬化、迅捷、晶盾等变异；D5-D6 会出现双重变异。</p></article>
+            <article><strong>10. 武器进化</strong><p>指定传说武器可以在商店继续进化，获得新的名称、图标和攻击规则。</p></article>
+            <article><strong>11. 星域事件</strong><p>第 5、10、15 波后会出现二选一事件，决定本局接下来的风险与收益。</p></article>
+            <article><strong>12. 诅咒道具</strong><p>诅咒道具很强，但会强化敌人；诅咒越高，掉落也越多。</p></article>
+            <article><strong>13. 精英技能</strong><p>每种精英拥有独立技能，生命条会显示技能名称。</p></article>
           </div>
         </div>
 
@@ -133,6 +137,15 @@
             <p id="upgrade-remaining">本波获得 1 次升级</p>
           </div>
           <div id="upgrade-options" class="choice-grid choice-grid--upgrades"></div>
+        </div>
+
+        <div id="event-panel" class="screen-panel event-panel" hidden>
+          <div class="screen-heading">
+            <p class="panel-kicker">星域事件</p>
+            <h2 id="event-title">未知信号</h2>
+            <p id="event-copy">远征途中出现了新的选择。</p>
+          </div>
+          <div id="event-choices" class="choice-grid event-choices"></div>
         </div>
 
         <div id="shop-panel" class="screen-panel shop-panel" hidden>
@@ -166,7 +179,7 @@
           <section class="inventory-section" aria-label="武器背包">
             <div class="section-title-row">
               <h3>武器槽 <span id="weapon-count">1 / 6</span></h3>
-              <p>同名同品质武器会连续自动合成</p>
+              <p>同名同品质会合成；部分传说武器可继续进化</p>
             </div>
             <div id="shop-inventory" class="inventory-grid"></div>
             <div id="tag-bonuses" class="tag-bonuses" aria-label="武器类别加成"></div>
@@ -199,7 +212,7 @@
       </section>
 
       <footer>
-    <p>v2.1.0 · 特性与变异挑战</p>
+    <p>v2.2.0 · 进化与诅咒构筑</p>
       </footer>
     </main>
 

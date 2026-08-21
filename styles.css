@@ -212,6 +212,8 @@ button:disabled { opacity: .48; cursor: not-allowed; transform: none !important;
 .shop-offers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 12px; }
 .shop-card { position: relative; min-height: 178px; padding: 13px; }
 .shop-card.is-locked { border-color: #d7ac62; }
+.shop-card.is-cursed { border-color: #b46add; background: linear-gradient(145deg, #34213c, #241a2b); box-shadow: inset 0 0 22px rgb(152 76 190 / 16%); }
+.shop-card.is-cursed .shop-card__type { color: #e2a5ff; }
 .shop-card__type { color: #91a98b; font-size: 10px; }
 .shop-card__price { display: block; margin-top: 10px; color: #7ee0c3; font-weight: 900; }
 .shop-actions { position: absolute; right: 10px; bottom: 10px; left: 10px; display: flex; gap: 6px; }
@@ -221,16 +223,23 @@ button:disabled { opacity: .48; cursor: not-allowed; transform: none !important;
 .stats-list { display: grid; grid-template-columns: 1fr auto; gap: 5px 8px; font-size: 11px; }
 .stats-list dt { color: #aab6a4; }
 .stats-list dd { margin: 0; color: #edf1e4; font-weight: 800; }
+.stats-list .curse-value { color: #e2a5ff; }
 .inventory-section { margin-top: 14px; }
 .inventory-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-top: 10px; }
 .inventory-card { min-height: 72px; padding: 9px; border: 2px solid var(--rarity, #667061); border-radius: 9px; background: #1a2518; }
+.inventory-card.is-evolved { border-color: #ffca62; background: linear-gradient(145deg, #3b3019, #1f291b); box-shadow: inset 0 0 18px rgb(255 202 98 / 13%); }
 .inventory-card.is-empty { display: grid; place-items: center; border-style: dashed; color: #71806e; font-size: 11px; }
 .inventory-card strong { display: block; font-size: 11px; }
 .inventory-card span { font-size: 10px; color: #aeb9a8; }
 .tag-bonuses { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
 .tag-bonus { padding: 5px 8px; border: 1px solid #52614d; border-radius: 999px; background: #202c1d; color: #aeb9a8; font-size: 10px; }
 .tag-bonus.is-active { border-color: #79bd78; color: #e9f3de; background: #263b22; }
-.sell-button { margin-top: 5px; padding: 3px 6px; border: 0; border-radius: 5px; background: #643c34; color: #f2d9ce; font-size: 9px; cursor: pointer; }
+.sell-button, .evolve-button { margin-top: 5px; padding: 3px 6px; border: 0; border-radius: 5px; font-size: 9px; cursor: pointer; }
+.sell-button { background: #643c34; color: #f2d9ce; }
+.evolve-button { margin-right: 4px; background: #e7a34f; color: #251809; font-weight: 900; }
+.event-panel { display: grid; align-content: center; }
+.event-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 720px; }
+.event-choice { min-height: 150px; }
 .next-wave-button { display: block; min-width: 210px; margin: 18px auto 0; }
 
 .modal-panel {
@@ -275,6 +284,7 @@ footer { padding-top: 10px; text-align: center; }
   .screen-panel { padding: 16px; }
   .choice-grid--characters, .choice-grid--weapons { grid-template-columns: 1fr; }
   .choice-grid--upgrades { grid-template-columns: repeat(2, 1fr); }
+  .event-choices { grid-template-columns: 1fr; }
   .danger-options { gap: 4px; }
   .danger-button { padding: 7px 2px; font-size: 10px; }
   .meta-menu { align-items: flex-start; flex-direction: column; }

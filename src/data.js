@@ -71,7 +71,8 @@ export const CHARACTERS = [
     color: "#c9864d",
     modifiers: { maxHealth: 10, harvesting: 5, pickupRange: 20 },
     trait: { id: "seasoned_growth", name: "四季生长", description: "每波结束永久获得 +1 收获" },
-    rules: ["特性·四季生长：每波结束永久 +1 收获", "初始拾取范围更大"],
+    origin: { name: "先锋补给", description: "开局额外获得 8 材料", materials: 8 },
+    rules: ["特性·四季生长：每波结束永久 +1 收获", "出身·先锋补给：开局 +8 材料", "+10 最大生命、+5 收获与更大拾取范围"],
     allowedWeapons: ["seed_launcher", "root_club", "spark_twig"],
   },
   {
@@ -82,7 +83,8 @@ export const CHARACTERS = [
     color: "#ca9855",
     modifiers: { maxHealth: -20, speed: 18, attackSpeed: 18, dodge: 8 },
     trait: { id: "tailwind", name: "顺风", description: "每 10% 速度额外提供 3.5% 伤害" },
-    rules: ["特性·顺风：速度会转化为伤害", "+18% 攻击速度与速度", "-20 最大生命"],
+    origin: { name: "轻装出发", description: "开局额外获得 +5% 速度", modifiers: { speed: 5 } },
+    rules: ["特性·顺风：速度会转化为伤害", "出身·轻装出发：开局 +5% 速度", "+18% 攻速与速度，-20 最大生命"],
     allowedWeapons: ["seed_launcher", "spark_twig", "thorn_disc"],
   },
   {
@@ -93,7 +95,8 @@ export const CHARACTERS = [
     color: "#a36f4e",
     modifiers: { maxHealth: 30, armor: 6, speed: -12, meleeDamage: 4 },
     trait: { id: "rooted_guard", name: "扎根", description: "静止 0.8 秒后额外获得 +4 护甲" },
-    rules: ["特性·扎根：静止时额外 +4 护甲", "+30 最大生命与 +6 护甲", "-12% 移动速度"],
+    origin: { name: "祖岩碎片", description: "开局额外获得 +2 护甲", modifiers: { armor: 2 } },
+    rules: ["特性·扎根：静止时额外 +4 护甲", "出身·祖岩碎片：开局 +2 护甲", "+30 生命与 +6 护甲，-12% 速度"],
     allowedWeapons: ["root_club", "thorn_disc"],
   },
   {
@@ -104,7 +107,8 @@ export const CHARACTERS = [
     color: "#c96f49",
     modifiers: { elementalDamage: 5, damage: 5, armor: -2 },
     trait: { id: "deep_kindling", name: "深燃", description: "施加的燃烧伤害提高 35%" },
-    rules: ["特性·深燃：燃烧伤害提高 35%", "+5 元素伤害", "-2 护甲"],
+    origin: { name: "余火种", description: "携带温热石屑开始远征", itemId: "element_1" },
+    rules: ["特性·深燃：燃烧伤害提高 35%", "出身·余火种：自带温热石屑", "+5 元素、+5% 伤害，-2 护甲"],
     allowedWeapons: ["ember_orb", "spark_twig", "magma_fruit"],
   },
   {
@@ -115,7 +119,8 @@ export const CHARACTERS = [
     color: "#b88758",
     modifiers: { engineering: 7, harvesting: 3, meleeDamage: -3 },
     trait: { id: "overclock", name: "超频", description: "工程武器冷却时间缩短 20%" },
-    rules: ["特性·超频：工程武器攻击更快", "+7 工程与 +3 收获", "-3 近战伤害"],
+    origin: { name: "备用零件", description: "携带备用螺帽开始远征", itemId: "engineering_1" },
+    rules: ["特性·超频：工程武器攻击更快", "出身·备用零件：自带备用螺帽", "+7 工程、+3 收获，-3 近战"],
     allowedWeapons: ["sentry_seed", "gear_bee", "spore_mine"],
   },
   {
@@ -126,7 +131,8 @@ export const CHARACTERS = [
     color: "#a66bc1",
     modifiers: { meleeDamage: 6, critChance: 12, maxHealth: -15 },
     trait: { id: "perfect_edge", name: "完美切面", description: "暴击伤害从 180% 提高到 215%" },
-    rules: ["特性·完美切面：暴击造成 215% 伤害", "+6 近战伤害与 +12% 暴击", "-15 最大生命"],
+    origin: { name: "棱镜训练", description: "开局额外获得 +5% 暴击率", modifiers: { critChance: 5 } },
+    rules: ["特性·完美切面：暴击造成 215% 伤害", "出身·棱镜训练：开局 +5% 暴击", "+6 近战、+12% 暴击，-15 生命"],
     allowedWeapons: ["crystal_knife", "vine_whip", "root_saw"],
   },
   {
@@ -137,7 +143,8 @@ export const CHARACTERS = [
     color: "#bd8c45",
     modifiers: { elementalDamage: 3, rangedDamage: 3, range: 25 },
     trait: { id: "wide_reaction", name: "扩散反应", description: "爆炸半径提高 30%" },
-    rules: ["特性·扩散反应：爆炸范围提高 30%", "+3 元素与远程伤害", "+25 射程"],
+    origin: { name: "长颈烧瓶", description: "开局额外获得 +20 射程", modifiers: { range: 20 } },
+    rules: ["特性·扩散反应：爆炸范围提高 30%", "出身·长颈烧瓶：开局 +20 射程", "+3 元素与远程，+25 射程"],
     allowedWeapons: ["pollen_blaster", "magma_fruit", "frost_pod"],
   },
   {
@@ -148,7 +155,8 @@ export const CHARACTERS = [
     color: "#677fc2",
     modifiers: { rangedDamage: 5, range: 50, speed: -6 },
     trait: { id: "phase_arrow", name: "月相穿透", description: "所有远程弹丸额外穿透 1 个目标" },
-    rules: ["特性·月相穿透：弹丸额外穿透 1 次", "+5 远程伤害与 +50 射程", "-6% 速度"],
+    origin: { name: "月银武装", description: "初始武器直接提升为精良品质", weaponRarity: 2 },
+    rules: ["特性·月相穿透：弹丸额外穿透 1 次", "出身·月银武装：初始武器为精良", "+5 远程、+50 射程，-6% 速度"],
     allowedWeapons: ["moon_bow", "needle_rifle", "seed_launcher"],
   },
   {
@@ -159,7 +167,8 @@ export const CHARACTERS = [
     color: "#6e9cb4",
     modifiers: { speed: 14, attackSpeed: 12, armor: -3 },
     trait: { id: "kinetic_charge", name: "动能充电", description: "每 10% 速度额外提供 4% 攻击速度" },
-    rules: ["特性·动能充电：速度会转化为攻击速度", "+14% 速度与 +12% 攻速", "-3 护甲"],
+    origin: { name: "预充电", description: "开局额外获得 +6% 攻击速度", modifiers: { attackSpeed: 6 } },
+    rules: ["特性·动能充电：速度会转化为攻击速度", "出身·预充电：开局 +6% 攻速", "+14% 速度、+12% 攻速，-3 护甲"],
     allowedWeapons: ["lightning_reed", "spark_twig", "pulse_coil"],
   },
   {
@@ -170,7 +179,8 @@ export const CHARACTERS = [
     color: "#759c64",
     modifiers: { healthRegen: 7, lifeSteal: 5, damage: -10 },
     trait: { id: "field_triage", name: "战地分诊", description: "治疗果实的恢复量提高 50%" },
-    rules: ["特性·战地分诊：果实治疗提高 50%", "+7 生命恢复与 +5% 生命偷取", "-10% 伤害"],
+    origin: { name: "随身苔片", description: "携带湿润苔片开始远征", itemId: "regen_1" },
+    rules: ["特性·战地分诊：果实治疗提高 50%", "出身·随身苔片：自带湿润苔片", "+7 恢复、+5% 偷取，-10% 伤害"],
     allowedWeapons: ["vine_whip", "sapling_spear", "frost_pod"],
   },
   {
@@ -181,7 +191,8 @@ export const CHARACTERS = [
     color: "#9b845d",
     modifiers: { pickupRange: 80, harvesting: 12, damage: -12 },
     trait: { id: "salvage", name: "拆解回收", description: "敌人有 22% 概率额外掉落 1 材料" },
-    rules: ["特性·拆解回收：击败敌人可能额外掉落材料", "+80 拾取范围与 +12 收获", "-12% 伤害"],
+    origin: { name: "旧货本金", description: "开局额外获得 14 材料", materials: 14 },
+    rules: ["特性·拆解回收：击败敌人可能额外掉落材料", "出身·旧货本金：开局 +14 材料", "+80 拾取、+12 收获，-12% 伤害"],
     allowedWeapons: ["pebble_sling", "gear_bee", "root_club"],
   },
   {
@@ -192,7 +203,8 @@ export const CHARACTERS = [
     color: "#d39a3d",
     modifiers: { damage: 12, armor: 4, attackSpeed: -15 },
     trait: { id: "heavy_payload", name: "重型装药", description: "爆炸伤害和范围提高 25%" },
-    rules: ["特性·重型装药：爆炸伤害与范围提高 25%", "+12% 伤害与 +4 护甲", "-15% 攻击速度"],
+    origin: { name: "破阵火药", description: "开局额外获得 +5% 伤害", modifiers: { damage: 5 } },
+    rules: ["特性·重型装药：爆炸伤害与范围提高 25%", "出身·破阵火药：开局 +5% 伤害", "+12% 伤害、+4 护甲，-15% 攻速"],
     allowedWeapons: ["sun_cannon", "bark_hammer", "magma_fruit"],
   },
 ];
@@ -343,6 +355,17 @@ export const WEAPONS = {
   },
 };
 
+export const WEAPON_EVOLUTIONS = {
+  seed_launcher: { icon: "🌳", name: "千籽星树", description: "额外发射 1 枚种子，伤害提高 15%", cost: 38, damageMultiplier: 1.15, projectileCountBonus: 1 },
+  root_club: { icon: "🪵", name: "古根震锤", description: "攻击范围提高 35%，击退翻倍", cost: 36, damageMultiplier: 1.2, rangeMultiplier: 1.35, knockbackMultiplier: 2 },
+  spark_twig: { icon: "⚡", name: "雷冠神枝", description: "攻击更快，并额外弹射 2 次", cost: 40, damageMultiplier: 1.12, cooldownMultiplier: 0.78, bounceBonus: 2 },
+  crystal_knife: { icon: "💠", name: "无瑕晶锋", description: "伤害提高 30%，攻击间隔缩短 15%", cost: 42, damageMultiplier: 1.3, cooldownMultiplier: 0.85 },
+  moon_bow: { icon: "🌕", name: "满月追猎弓", description: "额外穿透 2 个目标并弹射 1 次", cost: 46, damageMultiplier: 1.18, pierceBonus: 2, bounceBonus: 1 },
+  magma_fruit: { icon: "🌋", name: "星核熔果", description: "爆炸范围提高 55%，燃烧伤害提高 50%", cost: 48, damageMultiplier: 1.2, explosionRadiusMultiplier: 1.55, burnMultiplier: 1.5 },
+  gear_bee: { icon: "🐝", name: "蜂巢主机", description: "额外发射 1 枚蜂弹并多弹射 2 次", cost: 44, damageMultiplier: 1.1, projectileCountBonus: 1, bounceBonus: 2 },
+  sun_cannon: { icon: "🌞", name: "日冕灭星炮", description: "伤害提高 45%，爆炸范围提高 30%", cost: 54, damageMultiplier: 1.45, explosionRadiusMultiplier: 1.3 },
+};
+
 const PERCENT_STATS = new Set(["lifeSteal", "damage", "attackSpeed", "critChance", "dodge", "speed"]);
 const ITEM_STAT_SERIES = [
   ["health", "❤️", "maxHealth", [5, 9, 14, 20], ["小块薯粮", "根茎浓汤", "丰收餐盒", "古树心核"], 10],
@@ -388,7 +411,42 @@ const HYBRID_ITEMS = [
   { id: "moon_charm", icon: "🌙", name: "月相护符", price: 28, unique: true, trait: { id: "lunar_refuge", name: "月隐", description: "成功闪避时恢复 2 生命" }, modifiers: { dodge: 10, luck: 12, maxHealth: -8 }, description: "月隐：闪避恢复 2 生命；+10% 闪避，+12 幸运，-8 最大生命" },
 ];
 
-export const ITEMS = [...STAT_ITEMS, ...HYBRID_ITEMS];
+export const CURSED_ITEMS = [
+  { id: "cursed_heart", icon: "🫀", name: "噬星心核", price: 34, unique: true, curse: 2, modifiers: { maxHealth: 28, healthRegen: -4 }, description: "诅咒 2：+28 最大生命，-4 生命恢复" },
+  { id: "cursed_blade", icon: "🗡️", name: "渴战残刃", price: 36, unique: true, curse: 2, modifiers: { damage: 22, armor: -5 }, description: "诅咒 2：+22% 伤害，-5 护甲" },
+  { id: "cursed_eye", icon: "👁️", name: "虚空独眼", price: 35, unique: true, curse: 2, modifiers: { critChance: 18, maxHealth: -18 }, description: "诅咒 2：+18% 暴击率，-18 最大生命" },
+  { id: "cursed_wings", icon: "🪽", name: "逆风黑翼", price: 33, unique: true, curse: 1, modifiers: { speed: 20, harvesting: -10 }, description: "诅咒 1：+20% 速度，-10 收获" },
+  { id: "cursed_clock", icon: "⏱️", name: "失序时轮", price: 38, unique: true, curse: 2, modifiers: { attackSpeed: 24, damage: -10 }, description: "诅咒 2：+24% 攻击速度，-10% 伤害" },
+  { id: "cursed_crown", icon: "♛", name: "空王冠", price: 37, unique: true, curse: 2, modifiers: { luck: 30, dodge: -12 }, description: "诅咒 2：+30 幸运，-12% 闪避" },
+  { id: "cursed_magnet", icon: "🕳️", name: "坍缩磁核", price: 32, unique: true, curse: 1, modifiers: { pickupRange: 130, speed: -8 }, description: "诅咒 1：+130 拾取范围，-8% 速度" },
+  { id: "cursed_engine", icon: "⚙️", name: "禁忌母机", price: 40, unique: true, curse: 3, modifiers: { engineering: 14, meleeDamage: -6, rangedDamage: -6 }, description: "诅咒 3：+14 工程，-6 近战与远程伤害" },
+];
+
+export const ITEMS = [...STAT_ITEMS, ...HYBRID_ITEMS, ...CURSED_ITEMS];
+
+export const SPECIAL_EVENTS = [
+  {
+    id: "wandering_trader", icon: "🛸", name: "漂泊商船", description: "一艘旧商船愿意交换不稳定的货物。",
+    choices: [
+      { id: "buy_map", name: "购买星图", description: "支付 15 材料，获得 +10 幸运", materialCost: 15, modifiers: { luck: 10 } },
+      { id: "sell_route", name: "出售航线", description: "获得 16 材料，但失去 4% 速度", materials: 16, modifiers: { speed: -4 } },
+    ],
+  },
+  {
+    id: "ancient_grove", icon: "🌲", name: "沉睡古林", description: "古老根系正在回应你的构筑。",
+    choices: [
+      { id: "take_bark", name: "接受树皮", description: "+12 最大生命，-3% 速度", modifiers: { maxHealth: 12, speed: -3 } },
+      { id: "take_sap", name: "饮下树液", description: "+9% 伤害，-2 护甲", modifiers: { damage: 9, armor: -2 } },
+    ],
+  },
+  {
+    id: "broken_reactor", icon: "☢️", name: "破损反应炉", description: "炉芯仍有能量，也可能带来灾难。",
+    choices: [
+      { id: "restart_core", name: "重启炉芯", description: "+6 工程，-10 最大生命", modifiers: { engineering: 6, maxHealth: -10 } },
+      { id: "dismantle_core", name: "安全拆解", description: "获得 20 材料", materials: 20 },
+    ],
+  },
+];
 
 export const LEVEL_UPGRADES = [
   { id: "vitality", icon: "❤️", name: "旺盛生机", modifiers: { maxHealth: 8 }, description: "+8 最大生命" },
@@ -429,6 +487,13 @@ export const ELITE_ARCHETYPES = {
   storm_caller: { name: "雷芽祭司", behavior: "ranged", color: "#6960a8", light: "#c2b6ff", radius: 31, health: 620, speed: 48, damage: 17, armor: 3, shootCooldown: 1.15, projectileSpeed: 300, projectileCount: 3, preferredRange: 300, material: 18 },
   brood_keeper: { name: "育巢守望者", behavior: "summoner", color: "#667b3c", light: "#b5d66a", radius: 36, health: 840, speed: 36, damage: 18, armor: 5, summonCooldown: 2.8, summonType: "mite", summonCount: 4, material: 22 },
   iron_colossus: { name: "铁木巨像", behavior: "healer", color: "#505f61", light: "#a9bcbc", radius: 41, health: 1100, speed: 30, damage: 27, armor: 12, healCooldown: 2.6, healRadius: 190, healAmount: 35, material: 26 },
+};
+
+export const ELITE_SKILLS = {
+  thorn_champion: { icon: "🩸", name: "血刺冲阵", description: "周期性获得一次更快的冲锋", cooldown: 4.5 },
+  storm_caller: { icon: "⚡", name: "环形雷暴", description: "周期性向八个方向释放雷弹", cooldown: 5.2 },
+  brood_keeper: { icon: "🥚", name: "紧急孵化", description: "周期性召唤两只高速幼体", cooldown: 6 },
+  iron_colossus: { icon: "🛡️", name: "再生壁垒", description: "周期性恢复两层晶盾", cooldown: 5.5 },
 };
 
 export const BOSS_ARCHETYPES = {
