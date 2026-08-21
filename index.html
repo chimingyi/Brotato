@@ -3,21 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="薯星幸存者——一个从零开始的 AI 辅助游戏开发项目" />
-    <title>薯星幸存者</title>
+    <meta name="description" content="薯星幸存者——原创分波自动战斗构筑游戏" />
+    <title>薯星幸存者 v2</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <main class="game-shell">
       <header class="topbar">
         <div>
-          <p class="eyebrow">AI 游戏开发实验</p>
+          <p class="eyebrow">AI 游戏开发实验 · v2</p>
           <h1>薯星幸存者</h1>
         </div>
         <div class="topbar-meta">
           <p class="controls">移动：WASD / 方向键　暂停：空格</p>
-          <p id="best-record" class="best-record">最高纪录：00:00</p>
-          <button id="sound-toggle" class="sound-toggle" type="button" aria-pressed="true">音效：开</button>
+          <button id="sound-toggle" class="small-button" type="button" aria-pressed="true">音效：开</button>
         </div>
       </header>
 
@@ -26,38 +25,100 @@
           你的浏览器不支持 Canvas，请换一个较新的浏览器。
         </canvas>
 
-        <div class="hud" aria-live="polite">
-          <div class="stat-card">
+        <div id="battle-hud" class="hud" hidden aria-live="polite">
+          <div class="stat-card stat-card--health">
             <span class="stat-label">生命</span>
-            <div class="health-track">
-              <div id="health-fill" class="health-fill"></div>
-            </div>
+            <div class="health-track"><div id="health-fill" class="health-fill"></div></div>
             <strong id="health-text">100 / 100</strong>
           </div>
-          <div class="stat-card stat-card--compact">
-            <span class="stat-label">生存时间</span>
-            <strong id="timer">00:00</strong>
+          <div class="stat-card">
+            <span class="stat-label">波次</span>
+            <strong id="wave-text">1 / 20</strong>
           </div>
-          <div class="stat-card stat-card--compact">
+          <div class="stat-card">
+            <span class="stat-label">剩余时间</span>
+            <strong id="timer">00:20</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">材料</span>
+            <strong id="material-text">0</strong>
+          </div>
+          <div class="stat-card">
             <span class="stat-label">等级</span>
             <strong id="level-text">1</strong>
           </div>
-          <div class="stat-card stat-card--compact">
-            <span class="stat-label">击败</span>
-            <strong id="kill-count">0</strong>
-          </div>
         </div>
 
-        <div id="build-text" class="build-badge">武器：种子发射器</div>
+        <div id="weapon-bar" class="weapon-bar" hidden aria-label="武器槽"></div>
 
-        <div id="start-panel" class="panel">
-          <p class="panel-kicker">第一次远征</p>
-          <h2>准备好了吗？</h2>
-          <p>移动躲开敌人，武器会自动攻击。收集能量并坚持 5 分钟！</p>
-          <button id="start-button" type="button">开始冒险</button>
+        <div id="loadout-panel" class="screen-panel">
+          <div class="screen-heading">
+            <p class="panel-kicker">新远征</p>
+            <h2 id="loadout-title">选择探险员</h2>
+            <p id="loadout-copy">每位探险员都有不同优势。第一次建议选择“嫩芽先锋”。</p>
+          </div>
+          <div id="character-options" class="choice-grid choice-grid--characters"></div>
+          <div id="weapon-options" class="choice-grid choice-grid--weapons" hidden></div>
+          <button id="selection-back" class="secondary-button" type="button" hidden>返回选择角色</button>
+        </div>
+
+        <div id="upgrade-panel" class="screen-panel" hidden>
+          <div class="screen-heading">
+            <p class="panel-kicker">等级提升</p>
+            <h2>选择一项属性</h2>
+            <p id="upgrade-remaining">本波获得 1 次升级</p>
+          </div>
+          <div id="upgrade-options" class="choice-grid choice-grid--upgrades"></div>
+        </div>
+
+        <div id="shop-panel" class="screen-panel shop-panel" hidden>
+          <div class="shop-header">
+            <div>
+              <p class="panel-kicker">波次整备</p>
+              <h2 id="shop-title">第 1 波完成</h2>
+              <p id="wave-summary">收集材料，为下一波调整构筑。</p>
+            </div>
+            <div class="shop-wallet">
+              <span>可用材料</span>
+              <strong id="shop-materials">0</strong>
+            </div>
+          </div>
+
+          <div class="shop-layout">
+            <section class="shop-main" aria-label="商店货架">
+              <div class="section-title-row">
+                <h3>补给商店</h3>
+                <button id="reroll-button" class="secondary-button" type="button">刷新 · 1</button>
+              </div>
+              <div id="shop-offers" class="shop-offers"></div>
+            </section>
+
+            <aside class="build-sidebar">
+              <h3>当前属性</h3>
+              <div id="stats-list" class="stats-list"></div>
+            </aside>
+          </div>
+
+          <section class="inventory-section" aria-label="武器背包">
+            <div class="section-title-row">
+              <h3>武器槽 <span id="weapon-count">1 / 6</span></h3>
+              <p>同名同品质武器会自动合成</p>
+            </div>
+            <div id="shop-inventory" class="inventory-grid"></div>
+          </section>
+
+          <button id="next-wave-button" class="primary-button next-wave-button" type="button">开始第 2 波</button>
         </div>
 
         <div id="pause-badge" class="pause-badge" hidden>已暂停</div>
+
+        <div id="game-over-panel" class="modal-panel" hidden>
+          <p id="result-kicker" class="panel-kicker">远征结束</p>
+          <h2 id="result-title">探险员倒下了</h2>
+          <p id="game-over-summary">你抵达了第 1 波。</p>
+          <div id="result-stats" class="result-stats"></div>
+          <button id="restart-button" class="primary-button" type="button">返回角色选择</button>
+        </div>
 
         <div id="touch-controls" class="touch-controls" aria-label="触摸移动控制" hidden>
           <div id="joystick-base" class="joystick-base">
@@ -65,30 +126,14 @@
           </div>
         </div>
 
-        <div class="experience-wrap" aria-label="经验值">
-          <span id="experience-text">0 / 6</span>
-          <div class="experience-track">
-            <div id="experience-fill" class="experience-fill"></div>
-          </div>
-        </div>
-
-        <div id="upgrade-panel" class="panel panel--wide" hidden>
-          <p class="panel-kicker">等级提升</p>
-          <h2>选择一项强化</h2>
-          <p>没有绝对正确的选择，试试组合出自己的打法。</p>
-          <div id="upgrade-options" class="upgrade-options"></div>
-        </div>
-
-        <div id="game-over-panel" class="panel" hidden>
-          <p id="result-kicker" class="panel-kicker">训练结束</p>
-          <h2 id="result-title">探险员倒下了</h2>
-          <p id="game-over-summary">你坚持了 00:00，击败了 0 个敌人。</p>
-          <button id="restart-button" type="button">再试一次</button>
+        <div id="experience-wrap" class="experience-wrap" hidden aria-label="经验值">
+          <span id="experience-text">0 / 8</span>
+          <div class="experience-track"><div id="experience-fill" class="experience-fill"></div></div>
         </div>
       </section>
 
       <footer>
-        <p>第一版 · 坚持 5 分钟即可完成远征</p>
+        <p>v2 开发版 · 分波战斗与商店构筑</p>
       </footer>
     </main>
 
