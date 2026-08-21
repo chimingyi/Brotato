@@ -1,4 +1,5 @@
 import {
+  ACHIEVEMENTS,
   BASE_STATS,
   BOSS_ARCHETYPES,
   CHARACTERS,
@@ -11,6 +12,7 @@ import {
   LEVEL_UPGRADES,
   MAX_WAVES,
   MAX_WEAPON_SLOTS,
+  META_TALENTS,
   RARITIES,
   SPECIAL_EVENTS,
   STAT_LABELS,
@@ -18,13 +20,13 @@ import {
   WEAPON_TAG_BONUSES,
   WEAPONS,
   getWaveDefinition,
-} from "./data.js?v=2.2.0";
+} from "./data.js?v=2.3.0";
 import {
   loadProgress,
   recordRunProgress,
   resetProgress,
   saveProgress,
-} from "./storage.js?v=2.2.0";
+} from "./storage.js?v=2.3.0";
 
 const $ = (selector) => document.querySelector(selector);
 const canvas = $("#game-canvas");
@@ -55,6 +57,7 @@ const ui = {
   dangerOptions: $("#danger-options"),
   progressSummary: $("#progress-summary"),
   collectionButton: $("#collection-button"),
+  metaProgressButton: $("#meta-progress-button"),
   helpButton: $("#help-button"),
   settingsButton: $("#settings-button"),
   collectionPanel: $("#collection-panel"),
@@ -70,6 +73,11 @@ const ui = {
   shakeToggle: $("#shake-toggle"),
   damageNumberToggle: $("#damage-number-toggle"),
   resetSaveButton: $("#reset-save-button"),
+  metaProgressPanel: $("#meta-progress-panel"),
+  metaProgressClose: $("#meta-progress-close"),
+  talentPoints: $("#talent-points"),
+  talentGrid: $("#talent-grid"),
+  achievementGrid: $("#achievement-grid"),
   upgradePanel: $("#upgrade-panel"),
   upgradeOptions: $("#upgrade-options"),
   upgradeRemaining: $("#upgrade-remaining"),
@@ -96,6 +104,7 @@ const ui = {
   resultStats: $("#result-stats"),
   unlockSummary: $("#unlock-summary"),
   restartButton: $("#restart-button"),
+  endlessButton: $("#endless-button"),
   soundToggle: $("#sound-toggle"),
   touchControls: $("#touch-controls"),
   joystickBase: $("#joystick-base"),
@@ -120,6 +129,7 @@ const requestedStartHealth = Number.parseFloat(parameters.get("startHealth") || 
 const requestedStartRarity = Number.parseInt(parameters.get("startRarity") || "", 10);
 const requestedStartEvolved = localTestMode && parameters.get("startEvolved") === "1";
 const requestedEventId = localTestMode ? parameters.get("event") || "" : "";
+const requestedTalentPoints = Number.parseInt(parameters.get("talentPoints") || "", 10);
 const requestedShopRarity = Number.parseInt(parameters.get("shopRarity") || "", 10);
 const requestedShopWeapon = parameters.get("shopWeapon") || "";
 const requestedShopItem = parameters.get("shopItem") || "";
@@ -156,6 +166,9 @@ let progress = loadProgress({
   enemyIds,
   maxDanger: DANGER_LEVELS.length - 1,
 });
+if (localTestMode && Number.isFinite(requestedTalentPoints)) {
+  progress.talentPoints = clamp(requestedTalentPoints, 0, 99);
+}
 for (const character of CHARACTERS) {
   if (!progress.unlockedCharacters.includes(character.id)) continue;
   for (const weaponId of character.allowedWeapons) {
@@ -210,6 +223,9 @@ const game = {
   testShopOfferIndex: 0,
   encounteredEnemies: new Set(),
   progressRecorded: false,
+  endless: false,
+  standardVictory: false,
+  pendingMetaUnlocks: [],
   shakeTime: 0,
   traitState: createTraitState(),
   metrics: createEmptyMetrics(),
@@ -462,7 +478,55 @@ function getCharacterUnlockText(characterId) {
 }
 
 function renderProgressSummary() {
-  ui.progressSummary.textContent = `远征 ${progress.runs} 次 · 最高第 ${progress.bestWave} 波 · 通关 ${progress.wins} 次`;
+  const endlessText = progress.bestEndlessWave > 0 ? ` · 无尽最高 ${progress.bestEndlessWave} 波` : "";
+  ui.progressSummary.textContent = `远征 ${progress.runs} 次 · 最高第 ${progress.bestWave} 波 · 通关 ${progress.wins} 次${endlessText}`;
+}
+
+function renderMetaProgress() {
+  ui.talentPoints.textContent = String(progress.talentPoints);
+  ui.talentGrid.replaceChildren();
+  for (const talent of META_TALENTS) {
+    const rank = clamp(Number(progress.talents[talent.id]) || 0, 0, talent.maxRank);
+    const card = document.createElement("article");
+    card.className = "talent-card";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.disabled = rank >= talent.maxRank || progress.talentPoints < 1;
+    button.textContent = rank >= talent.maxRank ? "已升满" : "消耗 1 点升级";
+    button.addEventListener("click", () => upgradeTalent(talent.id));
+    card.innerHTML = `
+      <strong>${talent.icon} ${talent.name}</strong>
+      <span>${talent.description}</span>
+      <span>等级 ${rank} / ${talent.maxRank}</span>
+    `;
+    card.append(button);
+    ui.talentGrid.append(card);
+  }
+
+  const unlocked = new Set(progress.unlockedAchievements);
+  ui.achievementGrid.replaceChildren();
+  for (const achievement of ACHIEVEMENTS) {
+    const isUnlocked = unlocked.has(achievement.id);
+    const card = document.createElement("article");
+    card.className = `achievement-card ${isUnlocked ? "is-unlocked" : "is-locked"}`;
+    card.innerHTML = `
+      <strong>${isUnlocked ? achievement.icon : "🔒"} ${achievement.name}</strong>
+      <span>${achievement.description}</span>
+      <span>${isUnlocked ? "已完成 · 奖励 1 天赋点" : "尚未完成"}</span>
+    `;
+    ui.achievementGrid.append(card);
+  }
+}
+
+function upgradeTalent(talentId) {
+  const talent = META_TALENTS.find((entry) => entry.id === talentId);
+  if (!talent || progress.talentPoints < 1) return;
+  const currentRank = clamp(Number(progress.talents[talent.id]) || 0, 0, talent.maxRank);
+  if (currentRank >= talent.maxRank) return;
+  progress.talents[talent.id] = currentRank + 1;
+  progress.talentPoints -= 1;
+  saveProgress(progress, localTestMode);
+  renderMetaProgress();
 }
 
 function createCollectionGroup(title, entries) {
@@ -502,7 +566,7 @@ function renderCollection() {
   const weaponEntries = Object.values(WEAPONS).map((weapon) => ({
     icon: weapon.icon,
     name: weapon.name,
-    description: `${weapon.tags.join(" / ")} · ${weapon.description}`,
+    description: `${weapon.tags.join(" / ")} · ${weapon.description}${weapon.exclusiveTo ? ` · ${CHARACTERS.find((character) => character.id === weapon.exclusiveTo)?.name ?? "角色"}专属` : ""}`,
     hint: "继续提高最高波次",
     unlocked: progress.unlockedWeapons.includes(weapon.id),
   }));
@@ -671,6 +735,7 @@ function showCharacterSelection() {
   ui.collectionPanel.hidden = true;
   ui.helpPanel.hidden = true;
   ui.settingsPanel.hidden = true;
+  ui.metaProgressPanel.hidden = true;
   renderProgressSummary();
   renderCharacterChoices();
   renderDangerOptions();
@@ -705,6 +770,9 @@ function beginRun(startingWeaponId) {
   game.metrics = createEmptyMetrics();
   game.encounteredEnemies = new Set();
   game.progressRecorded = false;
+  game.endless = false;
+  game.standardVictory = false;
+  game.pendingMetaUnlocks = [];
   game.floatingTexts = [];
   game.shakeTime = 0;
   game.traitState = createTraitState();
@@ -719,6 +787,10 @@ function beginRun(startingWeaponId) {
   game.stats = { ...BASE_STATS };
   applyModifiers(game.selectedCharacter.modifiers, false);
   applyModifiers(origin.modifiers ?? {}, false);
+  for (const talent of META_TALENTS) {
+    const rank = clamp(Number(progress.talents[talent.id]) || 0, 0, talent.maxRank);
+    if (rank > 0) applyModifiers({ [talent.stat]: talent.amount * rank }, false);
+  }
   game.materials += origin.materials ?? 0;
   for (const itemId of game.items) {
     const item = ITEMS.find((entry) => entry.id === itemId);
@@ -739,6 +811,7 @@ function startWave() {
   game.phase = "wave";
   game.paused = false;
   game.waveDefinition = getWaveDefinition(game.wave, game.danger);
+  if (game.endless) updateEndlessProgress(game.wave);
   game.waveTime = getCurrentWaveDuration();
   game.waveStartMaterials = game.materials;
   game.waveCollected = 0;
@@ -1726,7 +1799,7 @@ function endWave() {
   ui.waveSummary.textContent = `击败 ${game.waveKills} 个敌人 · 收集 ${game.waveCollected} 材料 · 收获 +${harvestingIncome}`;
   playSound("wave");
 
-  if (game.wave >= MAX_WAVES) {
+  if (game.wave >= MAX_WAVES && !game.endless) {
     finishRun(true);
   } else if (game.pendingUpgrades > 0) {
     openUpgradePanel();
@@ -1736,9 +1809,9 @@ function endWave() {
 }
 
 function getWaveEvent() {
-  if (game.wave >= MAX_WAVES || game.wave % 5 !== 0 || game.completedEvents.includes(game.wave)) return null;
+  if ((!game.endless && game.wave >= MAX_WAVES) || game.wave % 5 !== 0 || game.completedEvents.includes(game.wave)) return null;
   if (requestedEventId) return SPECIAL_EVENTS.find((event) => event.id === requestedEventId) ?? null;
-  return SPECIAL_EVENTS[(game.wave / 5 - 1) % SPECIAL_EVENTS.length];
+  return SPECIAL_EVENTS[(game.wave / 5 - 1 + game.danger) % SPECIAL_EVENTS.length];
 }
 
 function openPostWaveDestination() {
@@ -1867,10 +1940,16 @@ function createShopOffer(forcedType = null) {
   const offersWeapon = forceWeaponShop
     || (!forceItemShop && (forcedType === "weapon" || (forcedType !== "item" && Math.random() < 0.48)));
   if (offersWeapon) {
-    const unlockedWeaponPool = progress.unlockedWeapons.map((id) => WEAPONS[id]).filter(Boolean);
-    const weapon = localTestMode && WEAPONS[requestedShopWeapon]
+    const belongsToCharacter = (weapon) => !weapon.exclusiveTo || weapon.exclusiveTo === game.selectedCharacter?.id;
+    const unlockedWeaponPool = progress.unlockedWeapons
+      .map((id) => WEAPONS[id])
+      .filter(Boolean)
+      .filter(belongsToCharacter);
+    const fallbackWeaponPool = Object.values(WEAPONS).filter(belongsToCharacter);
+    const forcedWeapon = WEAPONS[requestedShopWeapon];
+    const weapon = localTestMode && forcedWeapon && belongsToCharacter(forcedWeapon)
       ? WEAPONS[requestedShopWeapon]
-      : getBiasedWeapon(unlockedWeaponPool.length > 0 ? unlockedWeaponPool : Object.values(WEAPONS));
+      : getBiasedWeapon(unlockedWeaponPool.length > 0 ? unlockedWeaponPool : fallbackWeaponPool);
     const sequenceRarity = requestedShopRaritySequence[game.testShopOfferIndex];
     game.testShopOfferIndex += 1;
     const rarity = localTestMode && Number.isFinite(sequenceRarity)
@@ -2168,7 +2247,7 @@ function updateHud() {
   const healthPercent = clamp(player.health / getEffectiveStat("maxHealth"), 0, 1) * 100;
   ui.healthFill.style.width = `${healthPercent}%`;
   ui.healthText.textContent = `${Math.max(0, Math.ceil(player.health))} / ${Math.round(getEffectiveStat("maxHealth"))}`;
-  ui.waveText.textContent = `${game.wave} / ${MAX_WAVES} · D${game.danger}`;
+  ui.waveText.textContent = `${game.wave} / ${game.endless ? "∞" : MAX_WAVES} · D${game.danger}`;
   ui.timer.textContent = formatTime(game.waveTime);
   ui.materialText.textContent = String(game.materials);
   ui.levelText.textContent = String(game.level);
@@ -2188,13 +2267,61 @@ function updateHud() {
   renderWeaponBar();
 }
 
-function recordCurrentRun(won) {
-  if (game.progressRecorded) return null;
-  game.progressRecorded = true;
-  const unlocks = recordRunProgress(progress, {
+function isAchievementMet(achievement, result) {
+  const { type, value } = achievement.condition;
+  if (type === "runs") return progress.runs >= value;
+  if (type === "bestWave") return progress.bestWave >= value;
+  if (type === "wins") return progress.wins >= value;
+  if (type === "danger") return Boolean(result.won) && result.danger >= value;
+  if (type === "totalKills") return progress.totalKills >= value;
+  if (type === "totalMaterials") return progress.totalMaterials >= value;
+  if (type === "evolutions") return (result.evolutions ?? 0) >= value;
+  if (type === "cursedWin") return Boolean(result.won) && (result.curseLevel ?? 0) >= value;
+  if (type === "bestEndlessWave") return progress.bestEndlessWave >= value;
+  return false;
+}
+
+function evaluateAchievements(result) {
+  const unlocked = new Set(progress.unlockedAchievements);
+  const newlyUnlocked = [];
+  for (const achievement of ACHIEVEMENTS) {
+    if (unlocked.has(achievement.id) || !isAchievementMet(achievement, result)) continue;
+    progress.unlockedAchievements.push(achievement.id);
+    progress.talentPoints += 1;
+    unlocked.add(achievement.id);
+    newlyUnlocked.push(achievement.id);
+  }
+  return newlyUnlocked;
+}
+
+function getCurrentResult(won) {
+  return {
     won,
     wave: game.wave,
     danger: game.danger,
+    kills: game.totalKills,
+    materials: game.materials,
+    evolutions: game.metrics.weaponEvolutions,
+    curseLevel: getCurseLevel(),
+    endless: game.endless,
+  };
+}
+
+function updateEndlessProgress(wave) {
+  progress.bestEndlessWave = Math.max(progress.bestEndlessWave, wave);
+  const achievements = evaluateAchievements(getCurrentResult(false));
+  for (const id of achievements) {
+    if (!game.pendingMetaUnlocks.includes(id)) game.pendingMetaUnlocks.push(id);
+  }
+  saveProgress(progress, localTestMode);
+}
+
+function recordCurrentRun(won) {
+  if (game.progressRecorded) return null;
+  game.progressRecorded = true;
+  const result = getCurrentResult(won);
+  const unlocks = recordRunProgress(progress, {
+    ...result,
     weaponIds,
     itemIds,
     encounteredEnemyIds: [...game.encounteredEnemies],
@@ -2208,6 +2335,10 @@ function recordCurrentRun(won) {
         unlocks.weapons.push(weaponId);
       }
     }
+  }
+  unlocks.achievements = evaluateAchievements(result);
+  for (const id of unlocks.achievements) {
+    if (!game.pendingMetaUnlocks.includes(id)) game.pendingMetaUnlocks.push(id);
   }
   saveProgress(progress, localTestMode);
   return unlocks;
@@ -2230,11 +2361,26 @@ function describeUnlocks(unlocks) {
     if (item) lines.push(`道具：${item.name}`);
   }
   if (unlocks.items.length > 4) lines.push(`另外 ${unlocks.items.length - 4} 件道具`);
+  for (const id of unlocks.achievements ?? []) {
+    const achievement = ACHIEVEMENTS.find((entry) => entry.id === id);
+    if (achievement) lines.push(`成就：${achievement.name}（+1 天赋点）`);
+  }
   return lines;
 }
 
 function finishRun(won) {
-  const unlockLines = describeUnlocks(recordCurrentRun(won));
+  const endingEndless = game.endless;
+  let unlockLines;
+  if (endingEndless) {
+    updateEndlessProgress(game.wave);
+    unlockLines = game.pendingMetaUnlocks
+      .map((id) => ACHIEVEMENTS.find((entry) => entry.id === id))
+      .filter(Boolean)
+      .map((achievement) => `成就：${achievement.name}（+1 天赋点）`);
+  } else {
+    game.standardVictory = won;
+    unlockLines = describeUnlocks(recordCurrentRun(won));
+  }
   game.phase = "gameover";
   game.paused = false;
   game.keys.clear();
@@ -2247,9 +2393,12 @@ function finishRun(won) {
   ui.eventPanel.hidden = true;
   ui.shopPanel.hidden = true;
   ui.gameOverPanel.hidden = false;
-  ui.resultKicker.textContent = won ? "远征完成" : "远征结束";
-  ui.resultTitle.textContent = won ? "薯星防线守住了！" : "探险员倒下了";
-  ui.gameOverSummary.textContent = won
+  ui.endlessButton.hidden = endingEndless || !won;
+  ui.resultKicker.textContent = endingEndless ? "无尽远征结束" : won ? "远征完成" : "远征结束";
+  ui.resultTitle.textContent = endingEndless ? `抵达第 ${game.wave} 波` : won ? "薯星防线守住了！" : "探险员倒下了";
+  ui.gameOverSummary.textContent = endingEndless
+    ? `本次无尽远征抵达第 ${game.wave} 波，历史最高第 ${progress.bestEndlessWave} 波。`
+    : won
     ? `你在危险 D${game.danger} 完成了全部 20 波。`
     : `你在危险 D${game.danger} 抵达了第 ${game.wave} 波。`;
   ui.resultStats.innerHTML = `
@@ -2583,12 +2732,22 @@ function getTestSnapshot() {
       runs: progress.runs,
       wins: progress.wins,
       bestWave: progress.bestWave,
+      bestEndlessWave: progress.bestEndlessWave,
+      totalKills: progress.totalKills,
+      totalMaterials: progress.totalMaterials,
       highestDangerUnlocked: progress.highestDangerUnlocked,
       characters: progress.unlockedCharacters.length,
       weapons: progress.unlockedWeapons.length,
       items: progress.unlockedItems.length,
       enemies: progress.discoveredEnemies.length,
+      talentPoints: progress.talentPoints,
+      talents: { ...progress.talents },
+      achievements: [...progress.unlockedAchievements],
     },
+    endless: game.endless,
+    standardVictory: game.standardVictory,
+    exclusiveWeapon: Object.values(WEAPONS).find((weapon) => weapon.exclusiveTo === game.selectedCharacter?.id)?.id ?? null,
+    shopOffers: game.shopOffers.map((offer) => ({ type: offer.type, id: offer.definitionId })),
     settings: { ...progress.settings },
     floatingTexts: game.floatingTexts.length,
     shakeTime: Number(game.shakeTime.toFixed(3)),
@@ -2637,6 +2796,14 @@ ui.selectionBack.addEventListener("click", showCharacterSelection);
 ui.rerollButton.addEventListener("click", rerollShop);
 ui.nextWaveButton.addEventListener("click", () => { game.wave += 1; startWave(); });
 ui.restartButton.addEventListener("click", showCharacterSelection);
+ui.endlessButton.addEventListener("click", () => {
+  if (!game.standardVictory || game.endless) return;
+  game.endless = true;
+  game.pendingMetaUnlocks = [];
+  game.wave = MAX_WAVES + 1;
+  ui.gameOverPanel.hidden = true;
+  startWave();
+});
 ui.soundToggle.addEventListener("click", () => {
   audio.enabled = !audio.enabled;
   progress.settings.soundEnabled = audio.enabled;
@@ -2651,6 +2818,11 @@ ui.collectionButton.addEventListener("click", () => {
   ui.collectionPanel.hidden = false;
 });
 ui.collectionClose.addEventListener("click", () => { ui.collectionPanel.hidden = true; });
+ui.metaProgressButton.addEventListener("click", () => {
+  renderMetaProgress();
+  ui.metaProgressPanel.hidden = false;
+});
+ui.metaProgressClose.addEventListener("click", () => { ui.metaProgressPanel.hidden = true; });
 ui.helpButton.addEventListener("click", () => { ui.helpPanel.hidden = false; });
 ui.helpClose.addEventListener("click", () => {
   ui.helpPanel.hidden = true;

@@ -62,6 +62,28 @@ export const STAT_LABELS = {
   knockback: "击退",
 };
 
+export const META_TALENTS = [
+  { id: "vitality", icon: "❤️", name: "星芽体魄", description: "每级开局 +4 最大生命", stat: "maxHealth", amount: 4, maxRank: 3 },
+  { id: "power", icon: "💥", name: "战斗记忆", description: "每级开局 +3% 伤害", stat: "damage", amount: 3, maxRank: 3 },
+  { id: "haste", icon: "⚡", name: "快速反应", description: "每级开局 +3% 攻击速度", stat: "attackSpeed", amount: 3, maxRank: 3 },
+  { id: "fortune", icon: "🍀", name: "远征直觉", description: "每级开局 +5 幸运", stat: "luck", amount: 5, maxRank: 3 },
+  { id: "harvest", icon: "🌾", name: "物资规划", description: "每级开局 +2 收获", stat: "harvesting", amount: 2, maxRank: 3 },
+  { id: "resolve", icon: "🛡️", name: "危机训练", description: "每级开局 +1 护甲", stat: "armor", amount: 1, maxRank: 3 },
+];
+
+export const ACHIEVEMENTS = [
+  { id: "first_run", icon: "🚀", name: "第一次远征", description: "完成一局远征", condition: { type: "runs", value: 1 } },
+  { id: "wave_five", icon: "🌱", name: "站稳脚跟", description: "抵达第 5 波", condition: { type: "bestWave", value: 5 } },
+  { id: "wave_ten", icon: "🌗", name: "穿过半程", description: "抵达第 10 波", condition: { type: "bestWave", value: 10 } },
+  { id: "first_win", icon: "🏆", name: "守住星田", description: "完成一次 20 波远征", condition: { type: "wins", value: 1 } },
+  { id: "danger_three", icon: "🔥", name: "灾变幸存者", description: "完成危险 D3", condition: { type: "danger", value: 3 } },
+  { id: "hundred_kills", icon: "⚔️", name: "清场专家", description: "累计击败 100 个敌人", condition: { type: "totalKills", value: 100 } },
+  { id: "material_keeper", icon: "💎", name: "物资管理员", description: "累计带回 500 材料", condition: { type: "totalMaterials", value: 500 } },
+  { id: "weapon_evolver", icon: "🌟", name: "超越传说", description: "完成一次武器进化", condition: { type: "evolutions", value: 1 } },
+  { id: "cursed_victory", icon: "🕯️", name: "与诅咒共舞", description: "携带至少 3 点诅咒通关", condition: { type: "cursedWin", value: 3 } },
+  { id: "endless_twenty_five", icon: "♾️", name: "越过终点", description: "在无尽模式抵达第 25 波", condition: { type: "bestEndlessWave", value: 25 } },
+];
+
 export const CHARACTERS = [
   {
     id: "trailblazer",
@@ -73,7 +95,7 @@ export const CHARACTERS = [
     trait: { id: "seasoned_growth", name: "四季生长", description: "每波结束永久获得 +1 收获" },
     origin: { name: "先锋补给", description: "开局额外获得 8 材料", materials: 8 },
     rules: ["特性·四季生长：每波结束永久 +1 收获", "出身·先锋补给：开局 +8 材料", "+10 最大生命、+5 收获与更大拾取范围"],
-    allowedWeapons: ["seed_launcher", "root_club", "spark_twig"],
+    allowedWeapons: ["seed_launcher", "root_club", "spark_twig", "pioneer_bloom"],
   },
   {
     id: "wind_scout",
@@ -85,7 +107,7 @@ export const CHARACTERS = [
     trait: { id: "tailwind", name: "顺风", description: "每 10% 速度额外提供 3.5% 伤害" },
     origin: { name: "轻装出发", description: "开局额外获得 +5% 速度", modifiers: { speed: 5 } },
     rules: ["特性·顺风：速度会转化为伤害", "出身·轻装出发：开局 +5% 速度", "+18% 攻速与速度，-20 最大生命"],
-    allowedWeapons: ["seed_launcher", "spark_twig", "thorn_disc"],
+    allowedWeapons: ["seed_launcher", "spark_twig", "thorn_disc", "gale_feather"],
   },
   {
     id: "stone_keeper",
@@ -97,7 +119,7 @@ export const CHARACTERS = [
     trait: { id: "rooted_guard", name: "扎根", description: "静止 0.8 秒后额外获得 +4 护甲" },
     origin: { name: "祖岩碎片", description: "开局额外获得 +2 护甲", modifiers: { armor: 2 } },
     rules: ["特性·扎根：静止时额外 +4 护甲", "出身·祖岩碎片：开局 +2 护甲", "+30 生命与 +6 护甲，-12% 速度"],
-    allowedWeapons: ["root_club", "thorn_disc"],
+    allowedWeapons: ["root_club", "thorn_disc", "stone_anchor"],
   },
   {
     id: "ember_gardener",
@@ -109,7 +131,7 @@ export const CHARACTERS = [
     trait: { id: "deep_kindling", name: "深燃", description: "施加的燃烧伤害提高 35%" },
     origin: { name: "余火种", description: "携带温热石屑开始远征", itemId: "element_1" },
     rules: ["特性·深燃：燃烧伤害提高 35%", "出身·余火种：自带温热石屑", "+5 元素、+5% 伤害，-2 护甲"],
-    allowedWeapons: ["ember_orb", "spark_twig", "magma_fruit"],
+    allowedWeapons: ["ember_orb", "spark_twig", "magma_fruit", "ash_lantern"],
   },
   {
     id: "gear_tender",
@@ -121,7 +143,7 @@ export const CHARACTERS = [
     trait: { id: "overclock", name: "超频", description: "工程武器冷却时间缩短 20%" },
     origin: { name: "备用零件", description: "携带备用螺帽开始远征", itemId: "engineering_1" },
     rules: ["特性·超频：工程武器攻击更快", "出身·备用零件：自带备用螺帽", "+7 工程、+3 收获，-3 近战"],
-    allowedWeapons: ["sentry_seed", "gear_bee", "spore_mine"],
+    allowedWeapons: ["sentry_seed", "gear_bee", "spore_mine", "clockwork_hive"],
   },
   {
     id: "crystal_duelist",
@@ -133,7 +155,7 @@ export const CHARACTERS = [
     trait: { id: "perfect_edge", name: "完美切面", description: "暴击伤害从 180% 提高到 215%" },
     origin: { name: "棱镜训练", description: "开局额外获得 +5% 暴击率", modifiers: { critChance: 5 } },
     rules: ["特性·完美切面：暴击造成 215% 伤害", "出身·棱镜训练：开局 +5% 暴击", "+6 近战、+12% 暴击，-15 生命"],
-    allowedWeapons: ["crystal_knife", "vine_whip", "root_saw"],
+    allowedWeapons: ["crystal_knife", "vine_whip", "root_saw", "prism_rapier"],
   },
   {
     id: "pollen_alchemist",
@@ -145,7 +167,7 @@ export const CHARACTERS = [
     trait: { id: "wide_reaction", name: "扩散反应", description: "爆炸半径提高 30%" },
     origin: { name: "长颈烧瓶", description: "开局额外获得 +20 射程", modifiers: { range: 20 } },
     rules: ["特性·扩散反应：爆炸范围提高 30%", "出身·长颈烧瓶：开局 +20 射程", "+3 元素与远程，+25 射程"],
-    allowedWeapons: ["pollen_blaster", "magma_fruit", "frost_pod"],
+    allowedWeapons: ["pollen_blaster", "magma_fruit", "frost_pod", "reaction_flask"],
   },
   {
     id: "moon_hunter",
@@ -157,7 +179,7 @@ export const CHARACTERS = [
     trait: { id: "phase_arrow", name: "月相穿透", description: "所有远程弹丸额外穿透 1 个目标" },
     origin: { name: "月银武装", description: "初始武器直接提升为精良品质", weaponRarity: 2 },
     rules: ["特性·月相穿透：弹丸额外穿透 1 次", "出身·月银武装：初始武器为精良", "+5 远程、+50 射程，-6% 速度"],
-    allowedWeapons: ["moon_bow", "needle_rifle", "seed_launcher"],
+    allowedWeapons: ["moon_bow", "needle_rifle", "seed_launcher", "eclipse_bow"],
   },
   {
     id: "storm_runner",
@@ -169,7 +191,7 @@ export const CHARACTERS = [
     trait: { id: "kinetic_charge", name: "动能充电", description: "每 10% 速度额外提供 4% 攻击速度" },
     origin: { name: "预充电", description: "开局额外获得 +6% 攻击速度", modifiers: { attackSpeed: 6 } },
     rules: ["特性·动能充电：速度会转化为攻击速度", "出身·预充电：开局 +6% 攻速", "+14% 速度、+12% 攻速，-3 护甲"],
-    allowedWeapons: ["lightning_reed", "spark_twig", "pulse_coil"],
+    allowedWeapons: ["lightning_reed", "spark_twig", "pulse_coil", "tempest_coil"],
   },
   {
     id: "field_medic",
@@ -181,7 +203,7 @@ export const CHARACTERS = [
     trait: { id: "field_triage", name: "战地分诊", description: "治疗果实的恢复量提高 50%" },
     origin: { name: "随身苔片", description: "携带湿润苔片开始远征", itemId: "regen_1" },
     rules: ["特性·战地分诊：果实治疗提高 50%", "出身·随身苔片：自带湿润苔片", "+7 恢复、+5% 偷取，-10% 伤害"],
-    allowedWeapons: ["vine_whip", "sapling_spear", "frost_pod"],
+    allowedWeapons: ["vine_whip", "sapling_spear", "frost_pod", "triage_sprayer"],
   },
   {
     id: "scrap_collector",
@@ -193,7 +215,7 @@ export const CHARACTERS = [
     trait: { id: "salvage", name: "拆解回收", description: "敌人有 22% 概率额外掉落 1 材料" },
     origin: { name: "旧货本金", description: "开局额外获得 14 材料", materials: 14 },
     rules: ["特性·拆解回收：击败敌人可能额外掉落材料", "出身·旧货本金：开局 +14 材料", "+80 拾取、+12 收获，-12% 伤害"],
-    allowedWeapons: ["pebble_sling", "gear_bee", "root_club"],
+    allowedWeapons: ["pebble_sling", "gear_bee", "root_club", "scrap_recycler"],
   },
   {
     id: "sun_breaker",
@@ -205,7 +227,7 @@ export const CHARACTERS = [
     trait: { id: "heavy_payload", name: "重型装药", description: "爆炸伤害和范围提高 25%" },
     origin: { name: "破阵火药", description: "开局额外获得 +5% 伤害", modifiers: { damage: 5 } },
     rules: ["特性·重型装药：爆炸伤害与范围提高 25%", "出身·破阵火药：开局 +5% 伤害", "+12% 伤害、+4 护甲，-15% 攻速"],
-    allowedWeapons: ["sun_cannon", "bark_hammer", "magma_fruit"],
+    allowedWeapons: ["sun_cannon", "bark_hammer", "magma_fruit", "corona_mortar"],
   },
 ];
 
@@ -353,6 +375,54 @@ export const WEAPONS = {
     id: "sun_cannon", icon: "☀️", name: "日冕重炮", type: "ranged", tags: ["爆破", "充能"],
     description: "发射缓慢但威力巨大的爆裂光团。", baseDamage: 38, scaling: { rangedDamage: 0.9, elementalDamage: 0.6 }, cooldown: 1.62, range: 560, projectileSpeed: 330, explosionRadius: 120, price: 32, knockback: 32, projectileSize: 13, projectileColor: "#ffe174",
   },
+  pioneer_bloom: {
+    id: "pioneer_bloom", icon: "🌻", name: "先锋花冠", type: "ranged", tags: ["植物", "精准"], exclusiveTo: "trailblazer",
+    description: "嫩芽先锋专属：同时射出两枚会穿透目标的花籽。", baseDamage: 11, scaling: { rangedDamage: 0.72, harvesting: 0.12 }, cooldown: 0.62, range: 470, projectileSpeed: 570, projectileCount: 2, spread: 0.08, pierce: 1, price: 24, knockback: 6,
+  },
+  gale_feather: {
+    id: "gale_feather", icon: "🪶", name: "逐风羽刃", type: "ranged", tags: ["灵巧", "精准"], exclusiveTo: "wind_scout",
+    description: "风行侦察员专属：极快发射并在敌人之间弹射。", baseDamage: 10, scaling: { rangedDamage: 0.55, speed: 0.22 }, cooldown: 0.32, range: 450, projectileSpeed: 720, bounces: 1, price: 25, knockback: 3, projectileColor: "#a8ebc2",
+  },
+  stone_anchor: {
+    id: "stone_anchor", icon: "⚓", name: "岩根重锚", type: "melee", tags: ["钝击", "植物"], exclusiveTo: "stone_keeper",
+    description: "岩壳守卫专属：用护甲强化的巨大范围重击。", baseDamage: 34, scaling: { meleeDamage: 0.9, armor: 1.3 }, cooldown: 1.15, range: 112, price: 27, knockback: 42,
+  },
+  ash_lantern: {
+    id: "ash_lantern", icon: "🏮", name: "余烬提灯", type: "ranged", tags: ["元素", "充能"], exclusiveTo: "ember_gardener",
+    description: "余烬园丁专属：散射三团长时间燃烧的余火。", baseDamage: 7, scaling: { elementalDamage: 0.62 }, cooldown: 0.6, range: 390, projectileSpeed: 420, projectileCount: 3, spread: 0.16, burnDamage: 7, burnDuration: 4, price: 28, knockback: 2, projectileColor: "#ff9356",
+  },
+  clockwork_hive: {
+    id: "clockwork_hive", icon: "🏭", name: "发条蜂巢", type: "engineering", tags: ["工程", "充能"], exclusiveTo: "gear_tender",
+    description: "齿轮培育员专属：高速蜂弹会连续寻找三个目标。", baseDamage: 8, scaling: { engineering: 0.82 }, cooldown: 0.3, range: 480, projectileSpeed: 600, bounces: 3, price: 29, knockback: 2, projectileColor: "#f1c55c",
+  },
+  prism_rapier: {
+    id: "prism_rapier", icon: "🗡️", name: "棱镜刺剑", type: "melee", tags: ["利刃", "精准"], exclusiveTo: "crystal_duelist",
+    description: "晶刃决斗家专属：伤害随暴击率提高的高速刺击。", baseDamage: 14, scaling: { meleeDamage: 0.82, critChance: 0.4 }, cooldown: 0.3, range: 72, price: 27, knockback: 4,
+  },
+  reaction_flask: {
+    id: "reaction_flask", icon: "⚗️", name: "连锁反应瓶", type: "ranged", tags: ["元素", "爆破"], exclusiveTo: "pollen_alchemist",
+    description: "花粉炼金师专属：爆炸后点燃大范围目标。", baseDamage: 16, scaling: { elementalDamage: 0.82, rangedDamage: 0.35 }, cooldown: 1.02, range: 450, projectileSpeed: 370, explosionRadius: 112, burnDamage: 4, burnDuration: 3, price: 30, knockback: 17, projectileColor: "#e9c45f",
+  },
+  eclipse_bow: {
+    id: "eclipse_bow", icon: "🌘", name: "蚀月长弓", type: "ranged", tags: ["精准", "利刃"], exclusiveTo: "moon_hunter",
+    description: "月影猎手专属：月蚀箭穿透并弹向远处目标。", baseDamage: 24, scaling: { rangedDamage: 1.05 }, cooldown: 0.88, range: 680, projectileSpeed: 760, pierce: 3, bounces: 1, price: 31, knockback: 7, projectileColor: "#aabfff",
+  },
+  tempest_coil: {
+    id: "tempest_coil", icon: "🌪️", name: "奔雷线圈", type: "engineering", tags: ["工程", "充能"], exclusiveTo: "storm_runner",
+    description: "风暴跑者专属：移动速度会强化三股电流。", baseDamage: 8, scaling: { engineering: 0.55, speed: 0.2 }, cooldown: 0.42, range: 470, projectileSpeed: 650, projectileCount: 3, spread: 0.12, price: 28, knockback: 3, projectileColor: "#d7ee79",
+  },
+  triage_sprayer: {
+    id: "triage_sprayer", icon: "🧴", name: "苔露喷射器", type: "ranged", tags: ["植物", "元素"], exclusiveTo: "field_medic",
+    description: "苔原医师专属：快速喷射能减速目标的修复苔露。", baseDamage: 8, scaling: { elementalDamage: 0.48, healthRegen: 0.45 }, cooldown: 0.36, range: 350, projectileSpeed: 500, slowFactor: 0.68, slowDuration: 1.5, price: 25, knockback: 2, projectileColor: "#86e6a0",
+  },
+  scrap_recycler: {
+    id: "scrap_recycler", icon: "♻️", name: "废料回收炮", type: "engineering", tags: ["工程", "钝击"], exclusiveTo: "scrap_collector",
+    description: "废料收集者专属：用收获属性强化的穿透废料。", baseDamage: 15, scaling: { engineering: 0.55, harvesting: 0.28 }, cooldown: 0.58, range: 460, projectileSpeed: 540, pierce: 2, price: 27, knockback: 18, projectileColor: "#b9a57d",
+  },
+  corona_mortar: {
+    id: "corona_mortar", icon: "🌞", name: "日冕迫击炮", type: "ranged", tags: ["爆破", "钝击"], exclusiveTo: "sun_breaker",
+    description: "日冕破阵者专属：缓慢发射超大范围太阳爆弹。", baseDamage: 45, scaling: { rangedDamage: 0.8, elementalDamage: 0.75 }, cooldown: 1.8, range: 620, projectileSpeed: 290, explosionRadius: 145, price: 36, knockback: 38, projectileSize: 15, projectileColor: "#ffd35c",
+  },
 };
 
 export const WEAPON_EVOLUTIONS = {
@@ -430,6 +500,7 @@ export const SPECIAL_EVENTS = [
     choices: [
       { id: "buy_map", name: "购买星图", description: "支付 15 材料，获得 +10 幸运", materialCost: 15, modifiers: { luck: 10 } },
       { id: "sell_route", name: "出售航线", description: "获得 16 材料，但失去 4% 速度", materials: 16, modifiers: { speed: -4 } },
+      { id: "escort_ship", name: "护送商船", description: "+6% 伤害与 +4 收获", modifiers: { damage: 6, harvesting: 4 } },
     ],
   },
   {
@@ -437,6 +508,7 @@ export const SPECIAL_EVENTS = [
     choices: [
       { id: "take_bark", name: "接受树皮", description: "+12 最大生命，-3% 速度", modifiers: { maxHealth: 12, speed: -3 } },
       { id: "take_sap", name: "饮下树液", description: "+9% 伤害，-2 护甲", modifiers: { damage: 9, armor: -2 } },
+      { id: "plant_seed", name: "种下新芽", description: "+6 收获与 +30 拾取范围", modifiers: { harvesting: 6, pickupRange: 30 } },
     ],
   },
   {
@@ -444,6 +516,31 @@ export const SPECIAL_EVENTS = [
     choices: [
       { id: "restart_core", name: "重启炉芯", description: "+6 工程，-10 最大生命", modifiers: { engineering: 6, maxHealth: -10 } },
       { id: "dismantle_core", name: "安全拆解", description: "获得 20 材料", materials: 20 },
+      { id: "overload_core", name: "过载炉芯", description: "+14% 攻速，-5% 速度", modifiers: { attackSpeed: 14, speed: -5 } },
+    ],
+  },
+  {
+    id: "meteor_garden", icon: "☄️", name: "陨星花园", description: "陨石坑中长出了闪烁的异星植物。",
+    choices: [
+      { id: "harvest_crystal", name: "采集晶花", description: "+5 元素伤害，-6 幸运", modifiers: { elementalDamage: 5, luck: -6 } },
+      { id: "study_crater", name: "研究陨坑", description: "+4 工程与 +3 收获", modifiers: { engineering: 4, harvesting: 3 } },
+      { id: "leave_garden", name: "保持距离", description: "获得 14 材料", materials: 14 },
+    ],
+  },
+  {
+    id: "silent_obelisk", icon: "🗿", name: "寂静方碑", description: "方碑表面浮现出三种互相排斥的印记。",
+    choices: [
+      { id: "mark_force", name: "力量印记", description: "+12% 伤害，-8 最大生命", modifiers: { damage: 12, maxHealth: -8 } },
+      { id: "mark_guard", name: "守护印记", description: "+4 护甲，-8% 攻速", modifiers: { armor: 4, attackSpeed: -8 } },
+      { id: "mark_wind", name: "疾风印记", description: "+12% 速度，-3 近战伤害", modifiers: { speed: 12, meleeDamage: -3 } },
+    ],
+  },
+  {
+    id: "lost_greenhouse", icon: "🏚️", name: "失落温室", description: "废弃温室中还保存着一批实验种子。",
+    choices: [
+      { id: "open_vault", name: "开启种子库", description: "支付 12 材料，获得 +8 收获", materialCost: 12, modifiers: { harvesting: 8 } },
+      { id: "salvage_frames", name: "拆卸框架", description: "+3 护甲与 -4% 速度", modifiers: { armor: 3, speed: -4 } },
+      { id: "eat_samples", name: "食用样本", description: "+16 最大生命，-5 幸运", modifiers: { maxHealth: 16, luck: -5 } },
     ],
   },
 ];
@@ -523,6 +620,7 @@ export const DANGER_LEVELS = [
 
 const ELITE_WAVES = { 6: "thorn_champion", 9: "storm_caller", 13: "brood_keeper", 17: "iron_colossus" };
 const BOSS_IDS = Object.keys(BOSS_ARCHETYPES);
+const ELITE_IDS = Object.keys(ELITE_ARCHETYPES);
 
 export function getWaveDefinition(wave, dangerId = 0) {
   const danger = DANGER_LEVELS[dangerId] ?? DANGER_LEVELS[0];
@@ -532,8 +630,13 @@ export function getWaveDefinition(wave, dangerId = 0) {
     .map(([id]) => id);
   const types = unlockedTypes.slice(Math.max(0, unlockedTypes.length - 7));
   if (!types.includes("spore")) types.unshift("spore");
-  const bossId = wave === MAX_WAVES ? BOSS_IDS[dangerId % BOSS_IDS.length] : null;
-  const eliteId = ELITE_WAVES[wave] ?? null;
+  const endlessBoss = wave > MAX_WAVES && wave % 5 === 0;
+  const endlessElite = wave > MAX_WAVES && !endlessBoss && wave % 3 === 0;
+  const bossId = wave === MAX_WAVES
+    ? BOSS_IDS[dangerId % BOSS_IDS.length]
+    : endlessBoss ? BOSS_IDS[(dangerId + Math.floor(wave / 5)) % BOSS_IDS.length] : null;
+  const eliteId = ELITE_WAVES[wave]
+    ?? (endlessElite ? ELITE_IDS[Math.floor(wave / 3) % ELITE_IDS.length] : null);
   return {
     wave,
     duration,

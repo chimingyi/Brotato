@@ -73,6 +73,7 @@
             <p id="progress-summary">远征 0 次 · 最高第 0 波 · 通关 0 次</p>
             <div>
               <button id="collection-button" class="secondary-button" type="button">图鉴</button>
+              <button id="meta-progress-button" class="secondary-button" type="button">成长</button>
               <button id="help-button" class="secondary-button" type="button">新手指南</button>
               <button id="settings-button" class="secondary-button" type="button">设置</button>
             </div>
@@ -107,9 +108,12 @@
             <article><strong>8. 道具触发</strong><p>核心道具除了属性，还可能在首击、闪避、拾取或攻击次数满足条件时触发。</p></article>
             <article><strong>9. 怪物变异</strong><p>D1 起敌人可能获得硬化、迅捷、晶盾等变异；D5-D6 会出现双重变异。</p></article>
             <article><strong>10. 武器进化</strong><p>指定传说武器可以在商店继续进化，获得新的名称、图标和攻击规则。</p></article>
-            <article><strong>11. 星域事件</strong><p>第 5、10、15 波后会出现二选一事件，决定本局接下来的风险与收益。</p></article>
+            <article><strong>11. 星域事件</strong><p>第 5、10、15 波后会出现三选一事件，决定本局接下来的风险与收益；无尽模式中每 5 波继续出现。</p></article>
             <article><strong>12. 诅咒道具</strong><p>诅咒道具很强，但会强化敌人；诅咒越高，掉落也越多。</p></article>
             <article><strong>13. 精英技能</strong><p>每种精英拥有独立技能，生命条会显示技能名称。</p></article>
+            <article><strong>14. 成就与天赋</strong><p>每个成就奖励 1 天赋点，可在主菜单“成长”中购买永久开局属性。</p></article>
+            <article><strong>15. 角色专属武器</strong><p>每名探险员都有一把专属武器，只有对应角色能在初始选择和商店中获得。</p></article>
+            <article><strong>16. 无尽模式</strong><p>完成第 20 波后可以继续挑战；之后每 3 波出现精英、每 5 波出现首领。</p></article>
           </div>
         </div>
 
@@ -128,6 +132,22 @@
             <p>重置会清除通关、危险等级、角色和图鉴记录。</p>
             <button id="reset-save-button" class="secondary-button danger-button-reset" type="button">重置存档</button>
           </div>
+        </div>
+
+        <div id="meta-progress-panel" class="screen-panel info-panel" hidden>
+          <div class="info-panel__header">
+            <div><p class="panel-kicker">局外成长</p><h2>成就与天赋</h2></div>
+            <button id="meta-progress-close" class="secondary-button" type="button">返回</button>
+          </div>
+          <div class="meta-progress-summary">可用天赋点 <strong id="talent-points">0</strong></div>
+          <section class="meta-progress-section">
+            <h3>远征天赋</h3>
+            <div id="talent-grid" class="talent-grid"></div>
+          </section>
+          <section class="meta-progress-section">
+            <h3>成就记录</h3>
+            <div id="achievement-grid" class="achievement-grid"></div>
+          </section>
         </div>
 
         <div id="upgrade-panel" class="screen-panel" hidden>
@@ -196,7 +216,10 @@
           <p id="game-over-summary">你抵达了第 1 波。</p>
           <div id="result-stats" class="result-stats"></div>
           <div id="unlock-summary" class="unlock-summary" hidden></div>
-          <button id="restart-button" class="primary-button" type="button">返回角色选择</button>
+          <div class="result-actions">
+            <button id="endless-button" class="primary-button" type="button" hidden>继续无尽模式</button>
+            <button id="restart-button" class="secondary-button" type="button">返回角色选择</button>
+          </div>
         </div>
 
         <div id="touch-controls" class="touch-controls" aria-label="触摸移动控制" hidden>
@@ -212,10 +235,10 @@
       </section>
 
       <footer>
-    <p>v2.2.0 · 进化与诅咒构筑</p>
+    <p>v2.3.0 · 成就、专属武器与无尽挑战</p>
       </footer>
     </main>
 
-    <script type="module" src="src/game.js?v=2.2.0"></script>
+    <script type="module" src="src/game.js?v=2.3.0"></script>
   </body>
 </html>

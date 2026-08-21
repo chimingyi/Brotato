@@ -238,6 +238,52 @@ v2 开发分支可以使用下面的本地测试地址：
 - 进化为“千籽星树”后，测试快照中 `evolved=true`、伤害从 32 提高到 37，`weaponEvolutions=1`。
 - 使用 `startEvolved=1` 可直接测试进化攻击；千籽星树的 `projectiles / attacks` 应为 2。
 
+## 12. v2.3 成就、天赋、专属武器与无尽测试
+
+### 成长面板与天赋
+
+<http://localhost:8000/?test=1&talentPoints=5>
+
+- 主菜单点击“成长”，应显示 6 类天赋和 10 个成就。
+- 升级“星芽体魄”后，天赋点从 5 变为 4，等级从 0 / 3 变为 1 / 3。
+- 使用嫩芽先锋开始游戏，最大生命应从 110 提高到 114。
+- 每项天赋最多 3 级；天赋点不足或达到满级后按钮禁用。
+
+### 角色专属武器
+
+- 数据检查应得到 36 把武器，其中 12 把带有 `exclusiveTo`，并且每名角色恰好对应 1 把。
+- 用嫩芽先锋选择“先锋花冠”，测试快照中的 `exclusiveWeapon` 应为 `pioneer_bloom`。
+- 使用 `shopWeapons=1&shopWeapon=stone_anchor` 强制请求岩壳守卫专属武器，再用嫩芽先锋进入商店；货架中不应出现 `stone_anchor`。
+
+### 三选一事件
+
+<http://localhost:8000/?test=1&startWave=5&waveDuration=2&noEnemies=1&event=meteor_garden>
+
+- 第 5 波结束后应进入“陨星花园”。
+- `.event-choice` 数量应为 3，选择后进入商店。
+- 正式流程中的第 5、10、15 波分别出现漂泊商船、沉睡古林和破损反应炉；危险等级会改变事件轮换起点。
+
+### 成就条件
+
+- `startWave=20&waveDuration=2&noEnemies=1&invincible=1`：解锁第一次远征、抵达第 5 波、抵达第 10 波和首次通关，共奖励 4 点。
+- 再加入 `danger=3&startMaterials=500&startItems=cursed_engine`：还应解锁 D3 通关、累计材料和 3 点诅咒通关，共获得 7 点。
+- `startWave=19&startRarity=4&startMaterials=100`：在第 19 波商店进化初始武器，再完成第 20 波，应解锁“超越传说”。
+
+### 无尽模式
+
+<http://localhost:8000/?test=1&startWave=20&waveDuration=2&noEnemies=1&invincible=1>
+
+- 第 20 波结算显示“继续无尽模式”，此时远征次数和胜场各增加 1。
+- 点击后直接进入第 21 波，HUD 显示 `21 / ∞`，远征次数和胜场不重复增加。
+- 第 21 波生成精英；抵达第 25 波时生成首领，并解锁“越过终点”。
+- 无尽每开始一波就保存最高波次，意外刷新页面也不会丢失已经抵达的纪录。
+
+### v2.3 回归结果
+
+- 从第 1 波连续运行到第 20 波，19 次下一波按钮均唯一，三次事件各有 3 个选项，最终正确进入胜利结算。
+- 第 20 波继续到第 25 波时，`runs=1`、`wins=1` 保持不变，`bestEndlessWave=25`，天赋点只增加 1。
+- 三个 JavaScript 文件均通过 `node --check`，数据引用检查和 `git diff --check` 通过。
+
 ### 星域事件
 
 <http://localhost:8000/?test=1&startWave=5&waveDuration=2&noEnemies=1&startMaterials=30&event=wandering_trader>

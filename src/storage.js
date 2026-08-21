@@ -6,11 +6,17 @@ const STARTING_ITEM_COUNT = 24;
 
 export function createDefaultProgress() {
   return {
-    version: 1,
+    version: 2,
     runs: 0,
     wins: 0,
     bestWave: 0,
+    bestEndlessWave: 0,
+    totalKills: 0,
+    totalMaterials: 0,
     highestDangerUnlocked: 0,
+    unlockedAchievements: [],
+    talentPoints: 0,
+    talents: {},
     unlockedCharacters: [...STARTING_CHARACTERS],
     unlockedWeapons: [],
     unlockedItems: [],
@@ -31,6 +37,7 @@ function normalizeProgress(value, allWeaponIds, allItemIds) {
   return {
     ...defaults,
     ...progress,
+    version: defaults.version,
     unlockedCharacters: Array.isArray(progress.unlockedCharacters) ? progress.unlockedCharacters : defaults.unlockedCharacters,
     unlockedWeapons: Array.isArray(progress.unlockedWeapons) && progress.unlockedWeapons.length > 0
       ? progress.unlockedWeapons.filter((id) => allWeaponIds.includes(id))
@@ -39,6 +46,12 @@ function normalizeProgress(value, allWeaponIds, allItemIds) {
       ? progress.unlockedItems.filter((id) => allItemIds.includes(id))
       : allItemIds.slice(0, STARTING_ITEM_COUNT),
     discoveredEnemies: Array.isArray(progress.discoveredEnemies) ? progress.discoveredEnemies : [],
+    unlockedAchievements: Array.isArray(progress.unlockedAchievements) ? progress.unlockedAchievements : [],
+    talentPoints: Math.max(0, Number(progress.talentPoints) || 0),
+    talents: progress.talents && typeof progress.talents === "object" ? progress.talents : {},
+    bestEndlessWave: Math.max(0, Number(progress.bestEndlessWave) || 0),
+    totalKills: Math.max(0, Number(progress.totalKills) || 0),
+    totalMaterials: Math.max(0, Number(progress.totalMaterials) || 0),
     settings: { ...defaults.settings, ...(progress.settings ?? {}) },
   };
 }
@@ -100,6 +113,8 @@ export function recordRunProgress(progress, result) {
 
   progress.runs += 1;
   progress.bestWave = Math.max(progress.bestWave, result.wave);
+  progress.totalKills = (progress.totalKills ?? 0) + (result.kills ?? 0);
+  progress.totalMaterials = (progress.totalMaterials ?? 0) + (result.materials ?? 0);
   if (result.won) {
     progress.wins += 1;
     if (result.danger >= progress.highestDangerUnlocked) {
