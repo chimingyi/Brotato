@@ -8,6 +8,15 @@ export const RARITIES = [
   { id: 4, name: "传说", color: "#d78aea", multiplier: 2.45 },
 ];
 
+export const WEAPON_TAG_BONUSES = {
+  "植物": { icon: "🌿", stat: "harvesting", tiers: [[2, 3], [3, 6], [4, 10], [5, 15], [6, 21]] },
+  "精准": { icon: "🎯", stat: "rangedDamage", tiers: [[2, 2], [3, 4], [4, 7], [5, 10], [6, 14]] },
+  "钝击": { icon: "🛡️", stat: "armor", tiers: [[2, 2], [3, 4], [4, 6], [5, 8], [6, 11]] },
+  "元素": { icon: "✨", stat: "elementalDamage", tiers: [[2, 2], [3, 4], [4, 7], [5, 10], [6, 14]] },
+  "充能": { icon: "⚡", stat: "attackSpeed", tiers: [[2, 5], [3, 9], [4, 14], [5, 20], [6, 27]] },
+  "灵巧": { icon: "🍃", stat: "dodge", tiers: [[2, 3], [3, 6], [4, 10], [5, 14], [6, 19]] },
+};
+
 export const BASE_STATS = {
   maxHealth: 100,
   healthRegen: 0,
@@ -198,4 +207,3 @@ export function getWaveDefinition(wave) {
     speedMultiplier: Math.min(1.55, 1 + (wave - 1) * 0.018),
   };
 }
-

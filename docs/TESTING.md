@@ -83,7 +83,11 @@ v2 开发分支可以使用下面的本地测试地址：
 - `waveDuration=2`：把每波临时缩短为 2 秒。
 - `startMaterials=100`：开局获得 100 材料，便于测试购买、刷新和合成。
 - `startExperience=8`：开局积累一次升级，波末会出现四选一。
-- 三个参数只在本地地址且带 `test=1` 时生效，不会改变公开网站的正式数值。
+- `shopWeapons=1`：四个货架只生成武器。
+- `shopRarity=4`：测试商店固定生成传说品质，便于验证六槽满载。
+- `shopWeapon=seed_launcher`：固定生成指定武器。
+- `shopRarities=2,2,2,2,1,1,1,1`：按货架生成顺序指定品质，用于验证连续合成。
+- 这些参数只在本地地址且带 `test=1` 时生效，不会改变公开网站的正式数值。
 
 推荐按顺序验证：
 
@@ -95,3 +99,15 @@ v2 开发分支可以使用下面的本地测试地址：
 6. 购买第二把武器后出售，确认武器移除并返还材料。
 7. 开始第 2 波，确认 HUD 显示 `2 / 20`；波末确认锁定货物仍保留。
 8. 检查浏览器控制台没有错误或警告。
+
+### 六槽满载
+
+<http://localhost:8000/?test=1&waveDuration=2&startMaterials=9999&startExperience=8&shopWeapons=1&shopRarity=4>
+
+连续购买武器直到 `6 / 6`，剩余不能合成的武器应自动禁止购买；出售一把后应重新允许购买。
+
+### 连续自动合成
+
+<http://localhost:8000/?test=1&waveDuration=2&startMaterials=9999&startExperience=8&shopWeapon=seed_launcher&shopRarities=2,2,2,2,1,1,1,1>
+
+先购买一把精良种子发射器，再刷新并购买一把普通种子发射器。背包中的初始普通、精良和新购买的普通武器应连续合成为一把稀有武器，最终仍占一个槽。

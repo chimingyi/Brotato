@@ -179,6 +179,9 @@ button:disabled { opacity: .48; cursor: not-allowed; transform: none !important;
 .inventory-card.is-empty { display: grid; place-items: center; border-style: dashed; color: #71806e; font-size: 11px; }
 .inventory-card strong { display: block; font-size: 11px; }
 .inventory-card span { font-size: 10px; color: #aeb9a8; }
+.tag-bonuses { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+.tag-bonus { padding: 5px 8px; border: 1px solid #52614d; border-radius: 999px; background: #202c1d; color: #aeb9a8; font-size: 10px; }
+.tag-bonus.is-active { border-color: #79bd78; color: #e9f3de; background: #263b22; }
 .sell-button { margin-top: 5px; padding: 3px 6px; border: 0; border-radius: 5px; background: #643c34; color: #f2d9ce; font-size: 9px; cursor: pointer; }
 .next-wave-button { display: block; min-width: 210px; margin: 18px auto 0; }
 

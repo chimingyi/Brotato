@@ -8,6 +8,7 @@ import {
   MAX_WEAPON_SLOTS,
   RARITIES,
   STAT_LABELS,
+  WEAPON_TAG_BONUSES,
   WEAPONS,
   getWaveDefinition,
 } from "./data.js";
@@ -43,6 +44,7 @@ const ui = {
   statsList: $("#stats-list"),
   weaponCount: $("#weapon-count"),
   shopInventory: $("#shop-inventory"),
+  tagBonuses: $("#tag-bonuses"),
   nextWaveButton: $("#next-wave-button"),
   pauseBadge: $("#pause-badge"),
   gameOverPanel: $("#game-over-panel"),
@@ -66,6 +68,14 @@ const localTestMode = ["localhost", "127.0.0.1", "::1"].includes(window.location
 const requestedWaveDuration = Number.parseFloat(parameters.get("waveDuration") || "");
 const requestedStartMaterials = Number.parseInt(parameters.get("startMaterials") || "", 10);
 const requestedStartExperience = Number.parseInt(parameters.get("startExperience") || "", 10);
+const requestedShopRarity = Number.parseInt(parameters.get("shopRarity") || "", 10);
+const requestedShopWeapon = parameters.get("shopWeapon") || "";
+const requestedShopRaritySequence = (parameters.get("shopRarities") || "")
+  .split(",")
+  .map((value) => Number.parseInt(value, 10))
+  .filter((value) => Number.isFinite(value));
+const forceWeaponShop = localTestMode
+  && (parameters.get("shopWeapons") === "1" || Boolean(WEAPONS[requestedShopWeapon]));
 
 const game = {
   phase: "loadout",
@@ -101,6 +111,7 @@ const game = {
   activePointerId: null,
   lastFrameTime: 0,
   nextUid: 1,
+  testShopOfferIndex: 0,
 };
 
 const player = {
@@ -191,6 +202,32 @@ function applyModifiers(modifiers, healForMaxHealth = true) {
   player.health = Math.min(player.health, game.stats.maxHealth);
 }
 
+function getWeaponTagState() {
+  const counts = {};
+  for (const instance of game.inventory) {
+    for (const tag of WEAPONS[instance.id].tags) counts[tag] = (counts[tag] ?? 0) + 1;
+  }
+  return Object.entries(WEAPON_TAG_BONUSES).map(([tag, definition]) => {
+    const count = counts[tag] ?? 0;
+    let bonus = 0;
+    let activeCount = 0;
+    for (const [required, amount] of definition.tiers) {
+      if (count < required) break;
+      activeCount = required;
+      bonus = amount;
+    }
+    return { tag, count, bonus, activeCount, ...definition };
+  });
+}
+
+function getEffectiveStat(stat) {
+  let value = game.stats[stat] ?? 0;
+  for (const tagState of getWeaponTagState()) {
+    if (tagState.stat === stat) value += tagState.bonus;
+  }
+  return value;
+}
+
 function createWeapon(id, rarity = 1) {
   return { uid: game.nextUid++, id, rarity, cooldown: 0 };
 }
@@ -199,21 +236,21 @@ function getWeaponDamage(instance) {
   const definition = WEAPONS[instance.id];
   let damage = definition.baseDamage * RARITIES[instance.rarity - 1].multiplier;
   for (const [stat, scaling] of Object.entries(definition.scaling)) {
-    damage += (game.stats[stat] ?? 0) * scaling;
+    damage += getEffectiveStat(stat) * scaling;
   }
-  return Math.max(1, damage * (1 + game.stats.damage / 100));
+  return Math.max(1, damage * (1 + getEffectiveStat("damage") / 100));
 }
 
 function getWeaponCooldown(instance) {
-  return WEAPONS[instance.id].cooldown / Math.max(0.2, 1 + game.stats.attackSpeed / 100);
+  return WEAPONS[instance.id].cooldown / Math.max(0.2, 1 + getEffectiveStat("attackSpeed") / 100);
 }
 
 function getMovementSpeed() {
-  return 235 * Math.max(0.4, 1 + game.stats.speed / 100);
+  return 235 * Math.max(0.4, 1 + getEffectiveStat("speed") / 100);
 }
 
 function getDamageAfterArmor(rawDamage) {
-  const armor = game.stats.armor;
+  const armor = getEffectiveStat("armor");
   const reduction = armor >= 0 ? armor / (armor + 18) : armor / (18 - armor);
   return Math.max(1, rawDamage * (1 - reduction));
 }
@@ -302,6 +339,7 @@ function beginRun(startingWeaponId) {
   }
   game.rerollCost = 1;
   game.shopOffers = [];
+  game.testShopOfferIndex = 0;
   game.inventory = [createWeapon(startingWeaponId)];
   game.items = [];
   game.stats = { ...BASE_STATS };
@@ -392,7 +430,7 @@ function findNearestEnemy(maxRange = Number.POSITIVE_INFINITY) {
 
 function fireWeapon(instance) {
   const definition = WEAPONS[instance.id];
-  const range = Math.max(45, definition.range + game.stats.range);
+  const range = Math.max(45, definition.range + getEffectiveStat("range"));
   const target = findNearestEnemy(range);
   if (!target) return false;
   const dx = target.x - player.x;
@@ -441,15 +479,15 @@ function fireWeapon(instance) {
 function damageEnemy(index, baseDamage, knockback, directionX, directionY) {
   const enemy = game.enemies[index];
   if (!enemy) return;
-  const critical = Math.random() * 100 < game.stats.critChance;
+  const critical = Math.random() * 100 < getEffectiveStat("critChance");
   const damage = baseDamage * (critical ? 1.8 : 1);
   enemy.health -= damage;
   enemy.hitFlash = 0.08;
-  enemy.x += directionX * (knockback + game.stats.knockback);
-  enemy.y += directionY * (knockback + game.stats.knockback);
+  enemy.x += directionX * (knockback + getEffectiveStat("knockback"));
+  enemy.y += directionY * (knockback + getEffectiveStat("knockback"));
   createBurst(enemy.x, enemy.y, critical ? "#ffe48c" : "#dfb36a", critical ? 7 : 3);
-  if (game.stats.lifeSteal > 0 && Math.random() * 100 < game.stats.lifeSteal) {
-    player.health = Math.min(game.stats.maxHealth, player.health + 1);
+  if (getEffectiveStat("lifeSteal") > 0 && Math.random() * 100 < getEffectiveStat("lifeSteal")) {
+    player.health = Math.min(getEffectiveStat("maxHealth"), player.health + 1);
   }
   if (enemy.health <= 0) defeatEnemy(index);
 }
@@ -508,11 +546,11 @@ function updatePlayer(deltaTime) {
   player.y = clamp(player.y + directionY * movementSpeed * deltaTime, player.radius + 58, canvas.height - player.radius);
   player.invulnerableTimer = Math.max(0, player.invulnerableTimer - deltaTime);
 
-  if (game.stats.healthRegen > 0 && player.health < game.stats.maxHealth) {
-    player.regenAccumulator += deltaTime * game.stats.healthRegen / 5;
+  if (getEffectiveStat("healthRegen") > 0 && player.health < getEffectiveStat("maxHealth")) {
+    player.regenAccumulator += deltaTime * getEffectiveStat("healthRegen") / 5;
     if (player.regenAccumulator >= 1) {
       const healing = Math.floor(player.regenAccumulator);
-      player.health = Math.min(game.stats.maxHealth, player.health + healing);
+      player.health = Math.min(getEffectiveStat("maxHealth"), player.health + healing);
       player.regenAccumulator -= healing;
     }
   }
@@ -561,7 +599,7 @@ function updateEnemies(deltaTime) {
     enemy.hitFlash = Math.max(0, enemy.hitFlash - deltaTime);
     const touchDistance = player.radius + enemy.radius;
     if (distanceSquared(player, enemy) <= touchDistance * touchDistance && player.invulnerableTimer <= 0) {
-      if (Math.random() * 100 >= clamp(game.stats.dodge, 0, 60)) {
+      if (Math.random() * 100 >= clamp(getEffectiveStat("dodge"), 0, 60)) {
         player.health -= getDamageAfterArmor(enemy.damage);
         playSound("hurt");
       } else {
@@ -582,7 +620,7 @@ function updateGems(deltaTime) {
     const dx = player.x - gem.x;
     const dy = player.y - gem.y;
     const distance = Math.hypot(dx, dy) || 1;
-    if (distance < game.stats.pickupRange) {
+    if (distance < getEffectiveStat("pickupRange")) {
       gem.x += dx / distance * 410 * deltaTime;
       gem.y += dy / distance * 410 * deltaTime;
     }
@@ -651,7 +689,7 @@ function endWave() {
   if (game.phase !== "wave") return;
   for (const gem of game.gems) collectGem(gem);
   game.gems = [];
-  const harvestingIncome = Math.max(0, Math.floor(game.stats.harvesting));
+  const harvestingIncome = Math.max(0, Math.floor(getEffectiveStat("harvesting")));
   game.materials += harvestingIncome;
   game.stats.harvesting = Math.floor(game.stats.harvesting * 1.05);
   game.phase = "transition";
@@ -720,10 +758,18 @@ function rollRarity() {
 }
 
 function createShopOffer() {
-  const offersWeapon = Math.random() < 0.48;
+  const offersWeapon = forceWeaponShop || Math.random() < 0.48;
   if (offersWeapon) {
-    const weapon = randomItem(Object.values(WEAPONS));
-    const rarity = rollRarity();
+    const weapon = localTestMode && WEAPONS[requestedShopWeapon]
+      ? WEAPONS[requestedShopWeapon]
+      : randomItem(Object.values(WEAPONS));
+    const sequenceRarity = requestedShopRaritySequence[game.testShopOfferIndex];
+    game.testShopOfferIndex += 1;
+    const rarity = localTestMode && Number.isFinite(sequenceRarity)
+      ? clamp(sequenceRarity, 1, 4)
+      : localTestMode && Number.isFinite(requestedShopRarity)
+        ? clamp(requestedShopRarity, 1, 4)
+        : rollRarity();
     return {
       uid: game.nextUid++,
       type: "weapon",
@@ -777,6 +823,17 @@ function canAddWeapon(offer) {
   return Boolean(sameRarity) || game.inventory.length < MAX_WEAPON_SLOTS;
 }
 
+function addWeaponWithAutoCombine(definitionId, rarity) {
+  let resultRarity = rarity;
+  while (resultRarity < 4) {
+    const matchIndex = game.inventory.findIndex((weapon) => weapon.id === definitionId && weapon.rarity === resultRarity);
+    if (matchIndex < 0) break;
+    game.inventory.splice(matchIndex, 1);
+    resultRarity += 1;
+  }
+  game.inventory.push(createWeapon(definitionId, resultRarity));
+}
+
 function buyOffer(offerIndex) {
   const offer = game.shopOffers[offerIndex];
   if (!offer || offer.sold || game.materials < offer.price) return;
@@ -784,9 +841,7 @@ function buyOffer(offerIndex) {
   game.materials -= offer.price;
 
   if (offer.type === "weapon") {
-    const combinable = game.inventory.find((weapon) => weapon.id === offer.definitionId && weapon.rarity === offer.rarity && weapon.rarity < 4);
-    if (combinable) combinable.rarity += 1;
-    else game.inventory.push(createWeapon(offer.definitionId, offer.rarity));
+    addWeaponWithAutoCombine(offer.definitionId, offer.rarity);
   } else {
     const item = getOfferDefinition(offer);
     game.items.push(item.id);
@@ -858,7 +913,22 @@ function renderShop() {
   });
 
   renderInventory(ui.shopInventory, true);
+  renderTagBonuses();
   renderStats();
+}
+
+function renderTagBonuses() {
+  ui.tagBonuses.replaceChildren();
+  const ownedTags = getWeaponTagState().filter((tagState) => tagState.count > 0);
+  for (const tagState of ownedTags) {
+    const badge = document.createElement("span");
+    badge.className = `tag-bonus${tagState.bonus > 0 ? " is-active" : ""}`;
+    const nextTier = tagState.tiers.find(([required]) => required > tagState.count);
+    badge.textContent = tagState.bonus > 0
+      ? `${tagState.icon} ${tagState.tag} ${tagState.count}：+${tagState.bonus} ${STAT_LABELS[tagState.stat]}`
+      : `${tagState.icon} ${tagState.tag} ${tagState.count}${nextTier ? ` / ${nextTier[0]}` : ""}`;
+    ui.tagBonuses.append(badge);
+  }
 }
 
 function renderInventory(container, allowSell) {
@@ -896,7 +966,8 @@ function renderStats() {
     const term = document.createElement("dt");
     term.textContent = STAT_LABELS[stat];
     const value = document.createElement("dd");
-    value.textContent = stat === "maxHealth" ? Math.round(game.stats[stat]) : `${game.stats[stat] >= 0 ? "+" : ""}${Math.round(game.stats[stat])}`;
+    const effectiveValue = getEffectiveStat(stat);
+    value.textContent = stat === "maxHealth" ? Math.round(effectiveValue) : `${effectiveValue >= 0 ? "+" : ""}${Math.round(effectiveValue)}`;
     ui.statsList.append(term, value);
   }
 }
@@ -920,9 +991,9 @@ function renderWeaponBar() {
 }
 
 function updateHud() {
-  const healthPercent = clamp(player.health / game.stats.maxHealth, 0, 1) * 100;
+  const healthPercent = clamp(player.health / getEffectiveStat("maxHealth"), 0, 1) * 100;
   ui.healthFill.style.width = `${healthPercent}%`;
-  ui.healthText.textContent = `${Math.max(0, Math.ceil(player.health))} / ${Math.round(game.stats.maxHealth)}`;
+  ui.healthText.textContent = `${Math.max(0, Math.ceil(player.health))} / ${Math.round(getEffectiveStat("maxHealth"))}`;
   ui.waveText.textContent = `${game.wave} / ${MAX_WAVES}`;
   ui.timer.textContent = formatTime(game.waveTime);
   ui.materialText.textContent = String(game.materials);
