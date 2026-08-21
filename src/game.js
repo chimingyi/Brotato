@@ -22,9 +22,26 @@ const soundToggle = document.querySelector("#sound-toggle");
 const joystickBase = document.querySelector("#joystick-base");
 const joystickKnob = document.querySelector("#joystick-knob");
 const touchControls = document.querySelector("#touch-controls");
+const buildText = document.querySelector("#build-text");
 
-const ROUND_DURATION_SECONDS = 5 * 60;
-const BEST_RECORD_KEY = "spud-star-survivor-best-seconds";
+const pageParameters = new URLSearchParams(window.location.search);
+const localTestMode = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname)
+  && pageParameters.get("test") === "1";
+const requestedTestDuration = Number.parseFloat(pageParameters.get("roundDuration") || "");
+const requestedTestDefeatTime = Number.parseFloat(pageParameters.get("defeatAfter") || "");
+const ROUND_DURATION_SECONDS = localTestMode && Number.isFinite(requestedTestDuration)
+  ? clamp(requestedTestDuration, 1, 300)
+  : 5 * 60;
+const QUICK_LEVEL_TEST = localTestMode && pageParameters.get("quickLevel") === "1";
+const TEST_DEFEAT_AFTER = localTestMode && Number.isFinite(requestedTestDefeatTime)
+  ? clamp(requestedTestDefeatTime, 0.5, 300)
+  : null;
+const FORCED_TEST_UPGRADES = localTestMode
+  ? (pageParameters.get("upgrades") || "").split(",").filter(Boolean)
+  : [];
+const BEST_RECORD_KEY = localTestMode
+  ? "spud-star-survivor-test-best-seconds"
+  : "spud-star-survivor-best-seconds";
 
 // 所有会变化的游戏状态集中在这里。重新开始时，我们只要把它们恢复初始值。
 const game = {
@@ -260,7 +277,7 @@ function resetGame() {
   game.kills = 0;
   game.level = 1;
   game.experience = 0;
-  game.experienceToNext = 6;
+  game.experienceToNext = QUICK_LEVEL_TEST ? 1 : 6;
   game.choosingUpgrade = false;
   game.touchX = 0;
   game.touchY = 0;
@@ -306,6 +323,10 @@ function updateHud() {
   experienceText.textContent = `${game.experience} / ${game.experienceToNext}`;
   experienceFill.style.width = `${(game.experience / game.experienceToNext) * 100}%`;
   timerText.textContent = formatTime(game.elapsedSeconds);
+  const activeWeapons = ["种子发射器"];
+  if (weapon.orbitCount > 0) activeWeapons.push(`守护叶片 ×${weapon.orbitCount}`);
+  if (weapon.starBurstLevel > 0) activeWeapons.push(`星芒 Lv.${weapon.starBurstLevel}`);
+  buildText.textContent = `武器：${activeWeapons.join(" · ")}`;
 }
 
 function updatePlayer(deltaTime) {
@@ -471,6 +492,13 @@ function gainExperience(amount) {
 
 function sampleUpgradeChoices() {
   const available = UPGRADES.filter((upgrade) => !upgrade.isAvailable || upgrade.isAvailable());
+  if (FORCED_TEST_UPGRADES.length > 0) {
+    const forced = FORCED_TEST_UPGRADES
+      .map((upgradeId) => available.find((upgrade) => upgrade.id === upgradeId))
+      .filter(Boolean);
+    const remaining = available.filter((upgrade) => !forced.includes(upgrade));
+    return [...forced, ...remaining].slice(0, 3);
+  }
   const shuffled = [...available].sort(() => Math.random() - 0.5);
   return shuffled.slice(0, 3);
 }
@@ -519,7 +547,7 @@ function updateGems(deltaTime) {
     const distance = Math.hypot(differenceX, differenceY) || 1;
 
     // 远处的能量会非常缓慢地漂向玩家，进入拾取范围后会快速被吸过来。
-    const attractionSpeed = distance < player.pickupRadius ? 380 : 14;
+    const attractionSpeed = QUICK_LEVEL_TEST ? 950 : distance < player.pickupRadius ? 380 : 14;
     gem.x += (differenceX / distance) * attractionSpeed * deltaTime;
     gem.y += (differenceY / distance) * attractionSpeed * deltaTime;
 
@@ -693,7 +721,7 @@ function endGame(won = false) {
   resultKicker.textContent = won ? "远征完成" : "训练结束";
   resultTitle.textContent = won ? "你守住了薯星！" : "探险员倒下了";
   gameOverSummary.textContent = won
-    ? `你坚持了 05:00，共击败 ${game.kills} 个敌人。`
+    ? `你坚持了 ${formatTime(ROUND_DURATION_SECONDS)}，共击败 ${game.kills} 个敌人。`
     : `你坚持了 ${formatTime(game.elapsedSeconds)}，击败了 ${game.kills} 个敌人。`;
   restartButton.textContent = won ? "再次远征" : "再试一次";
   gameOverPanel.hidden = false;
@@ -900,7 +928,10 @@ function gameLoop(currentTime) {
 
   if (game.started && !game.paused && !game.over) {
     game.elapsedSeconds += deltaTime;
-    if (game.elapsedSeconds >= ROUND_DURATION_SECONDS) {
+    if (TEST_DEFEAT_AFTER !== null && game.elapsedSeconds >= TEST_DEFEAT_AFTER) {
+      player.health = 0;
+      endGame(false);
+    } else if (game.elapsedSeconds >= ROUND_DURATION_SECONDS) {
       game.elapsedSeconds = ROUND_DURATION_SECONDS;
       endGame(true);
     } else {
