@@ -70,4 +70,4 @@ python3 -m http.server 8000
 4. 分支选择 `main`，文件夹选择 `/ (root)`，点击 `Save`。
 5. 等待几分钟，GitHub 会显示可以访问的游戏网址。
 
-当前本地第一版已提交，但推送需要先登录拥有 `SuperPig0722/Brotato` 仓库权限的 GitHub 账号。
+当前代码已经推送到 [chimingyi/Brotato](https://github.com/chimingyi/Brotato)。仓库目前是私有状态；开启 GitHub Pages 前，需要由仓库所有者确认是否公开发布。
