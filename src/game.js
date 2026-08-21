@@ -18,13 +18,13 @@ import {
   WEAPON_TAG_BONUSES,
   WEAPONS,
   getWaveDefinition,
-} from "./data.js";
+} from "./data.js?v=2.2.0";
 import {
   loadProgress,
   recordRunProgress,
   resetProgress,
   saveProgress,
-} from "./storage.js";
+} from "./storage.js?v=2.2.0";
 
 const $ = (selector) => document.querySelector(selector);
 const canvas = $("#game-canvas");
