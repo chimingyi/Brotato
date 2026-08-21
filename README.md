@@ -55,3 +55,15 @@ python3 -m http.server 8000
 2. 每完成一步，都更新 `docs/DEVLOG.md`。
 3. 先保证好玩和稳定，再增加漂亮素材。
 4. AI 写出的代码必须实际运行测试，不能只看起来正确。
+
+## 发布到 GitHub Pages
+
+代码推送到 GitHub 后：
+
+1. 打开仓库的 `Settings`。
+2. 在左侧选择 `Pages`。
+3. `Build and deployment` 选择 `Deploy from a branch`。
+4. 分支选择 `main`，文件夹选择 `/ (root)`，点击 `Save`。
+5. 等待几分钟，GitHub 会显示可以访问的游戏网址。
+
+当前本地第一版已提交，但推送需要先登录拥有 `SuperPig0722/Brotato` 仓库权限的 GitHub 账号。
