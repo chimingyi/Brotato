@@ -1,6 +1,9 @@
 import {
   BASE_STATS,
+  BOSS_ARCHETYPES,
   CHARACTERS,
+  DANGER_LEVELS,
+  ELITE_ARCHETYPES,
   ENEMY_ARCHETYPES,
   ITEMS,
   LEVEL_UPGRADES,
@@ -26,12 +29,20 @@ const ui = {
   materialText: $("#material-text"),
   levelText: $("#level-text"),
   weaponBar: $("#weapon-bar"),
+  specialHud: $("#special-hud"),
+  specialName: $("#special-name"),
+  specialHealthFill: $("#special-health-fill"),
+  specialHealthText: $("#special-health-text"),
   loadoutPanel: $("#loadout-panel"),
   loadoutTitle: $("#loadout-title"),
   loadoutCopy: $("#loadout-copy"),
   characterOptions: $("#character-options"),
   weaponOptions: $("#weapon-options"),
   selectionBack: $("#selection-back"),
+  dangerPicker: $("#danger-picker"),
+  dangerValue: $("#danger-value"),
+  dangerDescription: $("#danger-description"),
+  dangerOptions: $("#danger-options"),
   upgradePanel: $("#upgrade-panel"),
   upgradeOptions: $("#upgrade-options"),
   upgradeRemaining: $("#upgrade-remaining"),
@@ -67,6 +78,8 @@ const localTestMode = ["localhost", "127.0.0.1", "::1"].includes(window.location
   && parameters.get("test") === "1";
 const requestedWaveDuration = Number.parseFloat(parameters.get("waveDuration") || "");
 const requestedStartWave = Number.parseInt(parameters.get("startWave") || "", 10);
+const requestedDanger = Number.parseInt(parameters.get("danger") || "", 10);
+const testInvincible = localTestMode && parameters.get("invincible") === "1";
 const requestedStartMaterials = Number.parseInt(parameters.get("startMaterials") || "", 10);
 const requestedStartExperience = Number.parseInt(parameters.get("startExperience") || "", 10);
 const requestedShopRarity = Number.parseInt(parameters.get("shopRarity") || "", 10);
@@ -82,6 +95,9 @@ const game = {
   phase: "loadout",
   paused: false,
   selectedCharacter: null,
+  danger: localTestMode && Number.isFinite(requestedDanger)
+    ? clamp(requestedDanger, 0, DANGER_LEVELS.length - 1)
+    : 0,
   wave: 1,
   waveDefinition: null,
   waveTime: 0,
@@ -102,6 +118,7 @@ const game = {
   stats: { ...BASE_STATS },
   spawnTimer: 0,
   enemies: [],
+  enemyProjectiles: [],
   projectiles: [],
   meleeEffects: [],
   gems: [],
@@ -113,7 +130,7 @@ const game = {
   lastFrameTime: 0,
   nextUid: 1,
   testShopOfferIndex: 0,
-  metrics: { attacks: 0, projectiles: 0, explosions: 0, burns: 0, slows: 0, bounces: 0 },
+  metrics: createEmptyMetrics(),
 };
 
 const player = {
@@ -131,6 +148,23 @@ const audio = { context: null, enabled: true };
 
 function clamp(value, minimum, maximum) {
   return Math.min(Math.max(value, minimum), maximum);
+}
+
+function createEmptyMetrics() {
+  return {
+    attacks: 0,
+    projectiles: 0,
+    explosions: 0,
+    burns: 0,
+    slows: 0,
+    bounces: 0,
+    enemyShots: 0,
+    summons: 0,
+    healPulses: 0,
+    heals: 0,
+    charges: 0,
+    specials: 0,
+  };
 }
 
 function formatTime(totalSeconds) {
@@ -275,11 +309,31 @@ function renderCharacterChoices() {
   }
 }
 
+function renderDangerOptions() {
+  ui.dangerOptions.replaceChildren();
+  for (const danger of DANGER_LEVELS) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "danger-button";
+    button.setAttribute("aria-pressed", String(game.danger === danger.id));
+    button.textContent = `D${danger.id} ${danger.name}`;
+    button.addEventListener("click", () => {
+      game.danger = danger.id;
+      renderDangerOptions();
+    });
+    ui.dangerOptions.append(button);
+  }
+  const selectedDanger = DANGER_LEVELS[game.danger];
+  ui.dangerValue.textContent = `D${selectedDanger.id}`;
+  ui.dangerDescription.textContent = selectedDanger.description;
+}
+
 function selectCharacter(characterId) {
   game.selectedCharacter = CHARACTERS.find((character) => character.id === characterId);
   ui.characterOptions.hidden = true;
   ui.weaponOptions.hidden = false;
   ui.selectionBack.hidden = false;
+  ui.dangerPicker.hidden = true;
   ui.loadoutTitle.textContent = `为${game.selectedCharacter.name}选择武器`;
   ui.loadoutCopy.textContent = "武器决定前几波的战斗方式，之后还能在商店购买并合成。";
   ui.weaponOptions.replaceChildren();
@@ -309,6 +363,7 @@ function showCharacterSelection() {
   ui.characterOptions.hidden = false;
   ui.weaponOptions.hidden = true;
   ui.selectionBack.hidden = true;
+  ui.dangerPicker.hidden = false;
   ui.loadoutTitle.textContent = "选择探险员";
   ui.loadoutCopy.textContent = "每位探险员都有不同优势。第一次建议选择“嫩芽先锋”。";
   ui.upgradePanel.hidden = true;
@@ -316,9 +371,11 @@ function showCharacterSelection() {
   ui.gameOverPanel.hidden = true;
   ui.battleHud.hidden = true;
   ui.weaponBar.hidden = true;
+  ui.specialHud.hidden = true;
   ui.experienceWrap.hidden = true;
   ui.touchControls.hidden = true;
   renderCharacterChoices();
+  renderDangerOptions();
   render();
 }
 
@@ -344,7 +401,7 @@ function beginRun(startingWeaponId) {
   game.rerollCost = 1;
   game.shopOffers = [];
   game.testShopOfferIndex = 0;
-  game.metrics = { attacks: 0, projectiles: 0, explosions: 0, burns: 0, slows: 0, bounces: 0 };
+  game.metrics = createEmptyMetrics();
   game.inventory = [createWeapon(startingWeaponId)];
   game.items = [];
   game.stats = { ...BASE_STATS };
@@ -363,13 +420,14 @@ function getCurrentWaveDuration() {
 function startWave() {
   game.phase = "wave";
   game.paused = false;
-  game.waveDefinition = getWaveDefinition(game.wave);
+  game.waveDefinition = getWaveDefinition(game.wave, game.danger);
   game.waveTime = getCurrentWaveDuration();
   game.waveStartMaterials = game.materials;
   game.waveCollected = 0;
   game.waveKills = 0;
   game.spawnTimer = 0.2;
   game.enemies = [];
+  game.enemyProjectiles = [];
   game.projectiles = [];
   game.meleeEffects = [];
   game.gems = [];
@@ -379,6 +437,7 @@ function startWave() {
   player.health = game.stats.maxHealth;
   player.invulnerableTimer = 0;
   player.regenAccumulator = 0;
+  if (game.waveDefinition.special) spawnSpecialEnemy();
   for (const weapon of game.inventory) weapon.cooldown = Math.random() * 0.2;
 
   ui.loadoutPanel.hidden = true;
@@ -388,16 +447,20 @@ function startWave() {
   ui.pauseBadge.hidden = true;
   ui.battleHud.hidden = false;
   ui.weaponBar.hidden = false;
+  ui.specialHud.hidden = !game.waveDefinition.special;
   ui.experienceWrap.hidden = false;
   ui.touchControls.hidden = false;
   updateHud();
   playSound("wave");
 }
 
-function spawnEnemy() {
-  const definition = game.waveDefinition;
-  const type = randomItem(definition.types);
-  const base = ENEMY_ARCHETYPES[type];
+function getEnemyArchetype(rank, type) {
+  if (rank === "elite") return ELITE_ARCHETYPES[type];
+  if (rank === "boss") return BOSS_ARCHETYPES[type];
+  return ENEMY_ARCHETYPES[type];
+}
+
+function getEnemySpawnPoint() {
   const margin = 34;
   const side = Math.floor(Math.random() * 4);
   let x;
@@ -406,22 +469,55 @@ function spawnEnemy() {
   else if (side === 1) { x = canvas.width + margin; y = Math.random() * canvas.height; }
   else if (side === 2) { x = Math.random() * canvas.width; y = canvas.height + margin; }
   else { x = -margin; y = Math.random() * canvas.height; }
-  game.enemies.push({
-    type,
-    x,
-    y,
+  return { x, y };
+}
+
+function spawnEnemy(type = null, options = {}) {
+  const rank = options.rank ?? "normal";
+  const enemyType = type ?? randomItem(game.waveDefinition.types);
+  const base = getEnemyArchetype(rank, enemyType);
+  if (!base) return null;
+  const spawnPoint = Number.isFinite(options.x) && Number.isFinite(options.y)
+    ? { x: options.x, y: options.y }
+    : getEnemySpawnPoint();
+  const specialScale = rank === "normal" ? 1 : Math.sqrt(game.waveDefinition.healthMultiplier);
+  const healthMultiplier = rank === "normal" ? game.waveDefinition.healthMultiplier : specialScale;
+  const damageMultiplier = rank === "normal" ? game.waveDefinition.damageMultiplier : Math.sqrt(game.waveDefinition.damageMultiplier);
+  const enemy = {
+    uid: game.nextUid++,
+    rank,
+    definition: base,
+    behavior: base.behavior,
+    type: enemyType,
+    x: spawnPoint.x,
+    y: spawnPoint.y,
     radius: base.radius,
-    maxHealth: base.health * definition.healthMultiplier,
-    health: base.health * definition.healthMultiplier,
-    speed: base.speed * definition.speedMultiplier,
-    damage: base.damage * definition.damageMultiplier,
-    material: base.material,
+    maxHealth: base.health * healthMultiplier,
+    health: base.health * healthMultiplier,
+    speed: base.speed * game.waveDefinition.speedMultiplier,
+    damage: base.damage * damageMultiplier,
+    armor: base.armor ?? 0,
+    material: Math.max(1, Math.round(base.material * game.waveDefinition.rewardMultiplier)),
     hitFlash: 0,
     burnRemaining: 0,
     burnDamage: 0,
     slowRemaining: 0,
     slowFactor: 1,
-  });
+    actionTimer: Math.random() * 0.8 + 0.3,
+    chargeRemaining: 0,
+    chargeX: 0,
+    chargeY: 0,
+    orbitDirection: Math.random() < 0.5 ? -1 : 1,
+  };
+  game.enemies.push(enemy);
+  if (rank !== "normal") game.metrics.specials += 1;
+  return enemy;
+}
+
+function spawnSpecialEnemy() {
+  const special = game.waveDefinition.special;
+  if (!special) return;
+  spawnEnemy(special.id, { rank: special.rank });
 }
 
 function findNearestEnemy(maxRange = Number.POSITIVE_INFINITY) {
@@ -563,7 +659,10 @@ function damageEnemy(index, baseDamage, knockback, directionX, directionY) {
   const enemy = game.enemies[index];
   if (!enemy) return;
   const critical = Math.random() * 100 < getEffectiveStat("critChance");
-  const damage = baseDamage * (critical ? 1.8 : 1);
+  const rawDamage = baseDamage * (critical ? 1.8 : 1);
+  const enemyArmor = enemy.armor ?? 0;
+  const armorReduction = enemyArmor >= 0 ? enemyArmor / (enemyArmor + 22) : enemyArmor / (22 - enemyArmor);
+  const damage = Math.max(1, rawDamage * (1 - armorReduction));
   enemy.health -= damage;
   enemy.hitFlash = 0.08;
   enemy.x += directionX * (knockback + getEffectiveStat("knockback"));
@@ -578,7 +677,7 @@ function damageEnemy(index, baseDamage, knockback, directionX, directionY) {
 function defeatEnemy(index) {
   const enemy = game.enemies[index];
   if (!enemy) return;
-  createBurst(enemy.x, enemy.y, ENEMY_ARCHETYPES[enemy.type].light, 9);
+  createBurst(enemy.x, enemy.y, enemy.definition.light, enemy.rank === "boss" ? 32 : enemy.rank === "elite" ? 20 : 9);
   for (let amount = 0; amount < enemy.material; amount += 1) {
     game.gems.push({
       x: enemy.x + (Math.random() - 0.5) * 12,
@@ -591,6 +690,15 @@ function defeatEnemy(index) {
   game.enemies.splice(index, 1);
   game.waveKills += 1;
   game.totalKills += 1;
+  if (enemy.definition.splitType && game.phase === "wave") {
+    for (let amount = 0; amount < enemy.definition.splitCount; amount += 1) {
+      spawnEnemy(enemy.definition.splitType, {
+        x: enemy.x + (Math.random() - 0.5) * 30,
+        y: enemy.y + (Math.random() - 0.5) * 30,
+      });
+      game.metrics.summons += 1;
+    }
+  }
 }
 
 function collectGem(gem) {
@@ -675,6 +783,167 @@ function updateProjectiles(deltaTime) {
   }
 }
 
+function hurtPlayer(rawDamage) {
+  if (player.invulnerableTimer > 0 || game.phase !== "wave") return false;
+  if (testInvincible) {
+    player.invulnerableTimer = 0.12;
+    return true;
+  }
+  if (Math.random() * 100 >= clamp(getEffectiveStat("dodge"), 0, 60)) {
+    player.health -= getDamageAfterArmor(rawDamage);
+    playSound("hurt");
+  } else {
+    createBurst(player.x, player.y, "#c6f4d0", 6);
+  }
+  player.invulnerableTimer = 0.65;
+  if (player.health <= 0) finishRun(false);
+  return true;
+}
+
+function shootEnemyProjectile(enemy) {
+  const definition = enemy.definition;
+  const count = definition.projectileCount ?? 1;
+  const baseAngle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+  for (let projectileIndex = 0; projectileIndex < count; projectileIndex += 1) {
+    const offset = projectileIndex - (count - 1) / 2;
+    const angle = baseAngle + offset * (count > 1 ? 0.16 : 0);
+    game.enemyProjectiles.push({
+      x: enemy.x,
+      y: enemy.y,
+      velocityX: Math.cos(angle) * definition.projectileSpeed,
+      velocityY: Math.sin(angle) * definition.projectileSpeed,
+      radius: enemy.rank === "boss" ? 8 : 6,
+      damage: enemy.damage,
+      color: definition.light,
+      remainingLife: 4,
+    });
+    game.metrics.enemyShots += 1;
+  }
+}
+
+function updateEnemyProjectiles(deltaTime) {
+  for (let index = game.enemyProjectiles.length - 1; index >= 0; index -= 1) {
+    const projectile = game.enemyProjectiles[index];
+    projectile.x += projectile.velocityX * deltaTime;
+    projectile.y += projectile.velocityY * deltaTime;
+    projectile.remainingLife -= deltaTime;
+    const hitDistance = player.radius + projectile.radius;
+    const hitPlayer = distanceSquared(projectile, player) <= hitDistance * hitDistance;
+    const outside = projectile.x < -40 || projectile.x > canvas.width + 40 || projectile.y < -40 || projectile.y > canvas.height + 40;
+    if (hitPlayer) hurtPlayer(projectile.damage);
+    if (hitPlayer || outside || projectile.remainingLife <= 0) game.enemyProjectiles.splice(index, 1);
+  }
+}
+
+function moveEnemy(enemy, directionX, directionY, speedMultiplier, deltaTime) {
+  enemy.x += directionX * enemy.speed * speedMultiplier * deltaTime;
+  enemy.y += directionY * enemy.speed * speedMultiplier * deltaTime;
+}
+
+function getEnemyBuffMultiplier(enemy) {
+  for (const source of game.enemies) {
+    if (source === enemy || source.behavior !== "buffer") continue;
+    const auraRadius = source.definition.auraRadius ?? 0;
+    if (distanceSquared(source, enemy) <= auraRadius * auraRadius) return 1.25;
+  }
+  return 1;
+}
+
+function updateEnemyBehavior(enemy, deltaTime, dx, dy, distance, movementMultiplier) {
+  const definition = enemy.definition;
+  const directionX = dx / distance;
+  const directionY = dy / distance;
+  enemy.actionTimer -= deltaTime;
+
+  if (enemy.behavior === "charger") {
+    if (enemy.chargeRemaining > 0) {
+      enemy.chargeRemaining -= deltaTime;
+      enemy.x += enemy.chargeX * definition.chargeSpeed * deltaTime;
+      enemy.y += enemy.chargeY * definition.chargeSpeed * deltaTime;
+    } else {
+      moveEnemy(enemy, directionX, directionY, movementMultiplier, deltaTime);
+      if (enemy.actionTimer <= 0) {
+        enemy.chargeX = directionX;
+        enemy.chargeY = directionY;
+        enemy.chargeRemaining = 0.55;
+        enemy.actionTimer = definition.chargeCooldown;
+        game.metrics.charges += 1;
+      }
+    }
+    return;
+  }
+
+  if (["ranged", "sniper", "turret"].includes(enemy.behavior)) {
+    const preferredRange = definition.preferredRange;
+    if (enemy.behavior !== "turret") {
+      if (distance > preferredRange + 35) moveEnemy(enemy, directionX, directionY, movementMultiplier, deltaTime);
+      else if (distance < preferredRange - 55) moveEnemy(enemy, -directionX, -directionY, movementMultiplier, deltaTime);
+      else moveEnemy(enemy, -directionY, directionX, movementMultiplier * 0.45, deltaTime);
+    }
+    if (enemy.actionTimer <= 0) {
+      shootEnemyProjectile(enemy);
+      enemy.actionTimer = definition.shootCooldown;
+    }
+    return;
+  }
+
+  if (enemy.behavior === "healer") {
+    moveEnemy(enemy, directionX, directionY, movementMultiplier * 0.75, deltaTime);
+    if (enemy.actionTimer <= 0) {
+      game.metrics.healPulses += 1;
+      let healed = 0;
+      for (const target of game.enemies) {
+        if (target === enemy || target.health >= target.maxHealth) continue;
+        if (distanceSquared(enemy, target) > definition.healRadius ** 2) continue;
+        target.health = Math.min(target.maxHealth, target.health + definition.healAmount);
+        createBurst(target.x, target.y, "#8de3a8", 4);
+        healed += 1;
+      }
+      if (healed > 0) game.metrics.heals += healed;
+      enemy.actionTimer = definition.healCooldown;
+    }
+    return;
+  }
+
+  if (enemy.behavior === "summoner") {
+    moveEnemy(enemy, directionX, directionY, movementMultiplier * 0.65, deltaTime);
+    if (enemy.actionTimer <= 0 && game.enemies.length < 90) {
+      for (let amount = 0; amount < definition.summonCount; amount += 1) {
+        spawnEnemy(definition.summonType, {
+          x: enemy.x + (Math.random() - 0.5) * 50,
+          y: enemy.y + (Math.random() - 0.5) * 50,
+        });
+        game.metrics.summons += 1;
+      }
+      enemy.actionTimer = definition.summonCooldown;
+    }
+    return;
+  }
+
+  if (enemy.behavior === "orbiter") {
+    const radial = distance > definition.orbitRange ? 0.7 : distance < definition.orbitRange - 45 ? -0.55 : 0;
+    const orbitX = directionX * radial + -directionY * enemy.orbitDirection;
+    const orbitY = directionY * radial + directionX * enemy.orbitDirection;
+    const orbitLength = Math.hypot(orbitX, orbitY) || 1;
+    moveEnemy(enemy, orbitX / orbitLength, orbitY / orbitLength, movementMultiplier, deltaTime);
+    return;
+  }
+
+  if (enemy.behavior === "teleporter") {
+    moveEnemy(enemy, directionX, directionY, movementMultiplier * 0.75, deltaTime);
+    if (enemy.actionTimer <= 0) {
+      const angle = Math.random() * Math.PI * 2;
+      enemy.x = clamp(player.x + Math.cos(angle) * 185, enemy.radius, canvas.width - enemy.radius);
+      enemy.y = clamp(player.y + Math.sin(angle) * 185, player.radius + 58, canvas.height - enemy.radius);
+      createBurst(enemy.x, enemy.y, definition.light, 10);
+      enemy.actionTimer = definition.teleportCooldown;
+    }
+    return;
+  }
+
+  moveEnemy(enemy, directionX, directionY, movementMultiplier, deltaTime);
+}
+
 function updateEnemies(deltaTime) {
   for (let enemyIndex = game.enemies.length - 1; enemyIndex >= 0; enemyIndex -= 1) {
     const enemy = game.enemies[enemyIndex];
@@ -691,22 +960,21 @@ function updateEnemies(deltaTime) {
     const dx = player.x - enemy.x;
     const dy = player.y - enemy.y;
     const length = Math.hypot(dx, dy) || 1;
-    const movementMultiplier = enemy.slowRemaining > 0 ? enemy.slowFactor : 1;
-    enemy.x += dx / length * enemy.speed * movementMultiplier * deltaTime;
-    enemy.y += dy / length * enemy.speed * movementMultiplier * deltaTime;
+    const slowMultiplier = enemy.slowRemaining > 0 ? enemy.slowFactor : 1;
+    const buffMultiplier = getEnemyBuffMultiplier(enemy);
+    updateEnemyBehavior(enemy, deltaTime, dx, dy, length, slowMultiplier * buffMultiplier);
     enemy.hitFlash = Math.max(0, enemy.hitFlash - deltaTime);
     const touchDistance = player.radius + enemy.radius;
     if (distanceSquared(player, enemy) <= touchDistance * touchDistance && player.invulnerableTimer <= 0) {
-      if (Math.random() * 100 >= clamp(getEffectiveStat("dodge"), 0, 60)) {
-        player.health -= getDamageAfterArmor(enemy.damage);
-        playSound("hurt");
-      } else {
-        createBurst(player.x, player.y, "#c6f4d0", 6);
-      }
-      player.invulnerableTimer = 0.65;
+      hurtPlayer(enemy.damage * (buffMultiplier > 1 ? 1.2 : 1));
       enemy.x -= dx / length * 18;
       enemy.y -= dy / length * 18;
-      if (player.health <= 0) finishRun(false);
+      if (enemy.behavior === "exploder") {
+        createBurst(enemy.x, enemy.y, enemy.definition.light, 20);
+        const currentIndex = game.enemies.indexOf(enemy);
+        if (currentIndex >= 0) defeatEnemy(currentIndex);
+      }
+      if (game.phase !== "wave") return;
     }
   }
 }
@@ -778,6 +1046,8 @@ function updateWave(deltaTime) {
   updateWeapons(deltaTime);
   updateProjectiles(deltaTime);
   updateEnemies(deltaTime);
+  if (game.phase !== "wave") return;
+  updateEnemyProjectiles(deltaTime);
   updateGems(deltaTime);
   updateEffects(deltaTime);
   updateHud();
@@ -796,6 +1066,7 @@ function endWave() {
   game.touchY = 0;
   ui.battleHud.hidden = true;
   ui.weaponBar.hidden = true;
+  ui.specialHud.hidden = true;
   ui.experienceWrap.hidden = true;
   ui.touchControls.hidden = true;
   ui.waveSummary.textContent = `击败 ${game.waveKills} 个敌人 · 收集 ${game.waveCollected} 材料 · 收获 +${harvestingIncome}`;
@@ -905,7 +1176,7 @@ function openShop() {
   game.rerollCost = Math.max(1, Math.floor(1 + game.wave * 0.35));
   ui.upgradePanel.hidden = true;
   ui.shopPanel.hidden = false;
-  ui.shopTitle.textContent = `第 ${game.wave} 波完成`;
+  ui.shopTitle.textContent = `D${game.danger} · 第 ${game.wave} 波完成`;
   ui.nextWaveButton.textContent = `开始第 ${game.wave + 1} 波`;
   refreshShopOffers(true);
 }
@@ -1092,12 +1363,19 @@ function updateHud() {
   const healthPercent = clamp(player.health / getEffectiveStat("maxHealth"), 0, 1) * 100;
   ui.healthFill.style.width = `${healthPercent}%`;
   ui.healthText.textContent = `${Math.max(0, Math.ceil(player.health))} / ${Math.round(getEffectiveStat("maxHealth"))}`;
-  ui.waveText.textContent = `${game.wave} / ${MAX_WAVES}`;
+  ui.waveText.textContent = `${game.wave} / ${MAX_WAVES} · D${game.danger}`;
   ui.timer.textContent = formatTime(game.waveTime);
   ui.materialText.textContent = String(game.materials);
   ui.levelText.textContent = String(game.level);
   ui.experienceText.textContent = `${game.experience} / ${game.experienceToNext}`;
   ui.experienceFill.style.width = `${game.experience / game.experienceToNext * 100}%`;
+  const special = game.enemies.find((enemy) => enemy.rank !== "normal");
+  ui.specialHud.hidden = !special;
+  if (special) {
+    ui.specialName.textContent = `${special.rank === "boss" ? "首领" : "精英"} · ${special.definition.name}`;
+    ui.specialHealthFill.style.width = `${clamp(special.health / special.maxHealth, 0, 1) * 100}%`;
+    ui.specialHealthText.textContent = `${Math.max(0, Math.ceil(special.health))} / ${Math.ceil(special.maxHealth)}`;
+  }
   renderWeaponBar();
 }
 
@@ -1107,6 +1385,7 @@ function finishRun(won) {
   game.keys.clear();
   ui.battleHud.hidden = true;
   ui.weaponBar.hidden = true;
+  ui.specialHud.hidden = true;
   ui.experienceWrap.hidden = true;
   ui.touchControls.hidden = true;
   ui.upgradePanel.hidden = true;
@@ -1114,7 +1393,9 @@ function finishRun(won) {
   ui.gameOverPanel.hidden = false;
   ui.resultKicker.textContent = won ? "远征完成" : "远征结束";
   ui.resultTitle.textContent = won ? "薯星防线守住了！" : "探险员倒下了";
-  ui.gameOverSummary.textContent = won ? "你完成了全部 20 波。" : `你抵达了第 ${game.wave} 波。`;
+  ui.gameOverSummary.textContent = won
+    ? `你在危险 D${game.danger} 完成了全部 20 波。`
+    : `你在危险 D${game.danger} 抵达了第 ${game.wave} 波。`;
   ui.resultStats.innerHTML = `
     <div><strong>${game.totalKills}</strong><span>击败</span></div>
     <div><strong>${game.materials}</strong><span>剩余材料</span></div>
@@ -1140,7 +1421,7 @@ function drawBackground() {
 }
 
 function drawEnemy(enemy) {
-  const style = ENEMY_ARCHETYPES[enemy.type];
+  const style = enemy.definition;
   context.save();
   context.translate(enemy.x, enemy.y);
   context.fillStyle = "rgba(0,0,0,.26)";
@@ -1156,6 +1437,13 @@ function drawEnemy(enemy) {
   else context.arc(0, 0, enemy.radius, 0, Math.PI * 2);
   context.fill();
   context.stroke();
+  if (enemy.rank !== "normal") {
+    context.strokeStyle = enemy.rank === "boss" ? "#ffcf65" : "#f09d58";
+    context.lineWidth = enemy.rank === "boss" ? 6 : 4;
+    context.beginPath();
+    context.arc(0, 0, enemy.radius + 8, 0, Math.PI * 2);
+    context.stroke();
+  }
   if (enemy.burnRemaining > 0) {
     context.strokeStyle = "#ff9b4b";
     context.lineWidth = 3;
@@ -1236,6 +1524,15 @@ function drawCombatObjects() {
     context.fill();
     context.stroke();
   }
+  for (const projectile of game.enemyProjectiles) {
+    context.fillStyle = projectile.color;
+    context.strokeStyle = "rgba(255,255,255,.7)";
+    context.lineWidth = 1.5;
+    context.beginPath();
+    context.arc(projectile.x, projectile.y, projectile.radius, 0, Math.PI * 2);
+    context.fill();
+    context.stroke();
+  }
   for (const effect of game.meleeEffects) {
     context.strokeStyle = effect.color;
     context.globalAlpha = effect.remainingLife / .16;
@@ -1268,10 +1565,17 @@ function getTestSnapshot() {
   return {
     phase: game.phase,
     wave: game.wave,
+    danger: game.danger,
     level: game.level,
     materials: game.materials,
     inventory: game.inventory.map((weapon) => ({ id: weapon.id, rarity: weapon.rarity, damage: Math.round(getWeaponDamage(weapon)) })),
     enemies: game.enemies.length,
+    enemyRanks: game.enemies.reduce((counts, enemy) => ({ ...counts, [enemy.rank]: (counts[enemy.rank] ?? 0) + 1 }), {}),
+    enemyBehaviors: game.enemies.reduce((counts, enemy) => ({ ...counts, [enemy.behavior]: (counts[enemy.behavior] ?? 0) + 1 }), {}),
+    enemyProjectiles: game.enemyProjectiles.length,
+    specials: game.enemies
+      .filter((enemy) => enemy.rank !== "normal")
+      .map((enemy) => ({ id: enemy.type, rank: enemy.rank, health: Math.round(enemy.health), maxHealth: Math.round(enemy.maxHealth) })),
     activeBurns: game.enemies.filter((enemy) => enemy.burnRemaining > 0).length,
     activeSlows: game.enemies.filter((enemy) => enemy.slowRemaining > 0).length,
     metrics: { ...game.metrics },

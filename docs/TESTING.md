@@ -82,6 +82,8 @@ v2 开发分支可以使用下面的本地测试地址：
 
 - `waveDuration=2`：把每波临时缩短为 2 秒。
 - `startWave=10`：从指定波次开始，用更密集、更耐打的敌人验证高级武器。
+- `danger=4`：选择 D0-D4 中的指定危险等级。
+- `invincible=1`：本地测试时忽略伤害，用于稳定验证最终波结算。
 - `startMaterials=100`：开局获得 100 材料，便于测试购买、刷新和合成。
 - `startExperience=8`：开局积累一次升级，波末会出现四选一。
 - `shopWeapons=1`：四个货架只生成武器。
@@ -123,3 +125,16 @@ v2 开发分支可以使用下面的本地测试地址：
 - 月芽长弓：使用 `startWave=10` 运行后，`bounces` 应大于 0。
 - 花粉迸射器：`projectiles` 应等于 `attacks` 的 3 倍。
 - 哨戒种核：齿轮培育员开局时伤害应为 18，证明工程属性参与缩放。
+
+### 精英、首领与危险等级
+
+- `startWave=6`：生成荆冠斗士，测试冲锋精英。
+- `startWave=9`：生成雷芽祭司，测试三连远程弹幕。
+- `startWave=13`：生成育巢守望者，约 4 秒后 `summons` 应大于 0。
+- `startWave=17`：生成铁木巨像，约 1 秒后 `healPulses` 应大于 0。
+- `startWave=20&danger=0`：生成万巢母体。
+- `startWave=20&danger=1`：生成风暴星核。
+- `startWave=20&danger=2`：生成岩根泰坦。
+- `startWave=20&danger=4&waveDuration=2&invincible=1`：2 秒后应显示 D4 完成 20 波的胜利结算。
+
+精英和首领出现时，画面上方应显示名称、当前生命和总生命。D0 到 D4 会同时改变敌人的生命、伤害、速度和生成间隔。

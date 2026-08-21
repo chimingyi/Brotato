@@ -393,23 +393,67 @@ export const LEVEL_UPGRADES = [
 ];
 
 export const ENEMY_ARCHETYPES = {
-  spore: { name: "漂浮孢子", color: "#914e61", light: "#c46c7f", radius: 18, health: 28, speed: 62, damage: 8, material: 1 },
-  runner: { name: "疾行虫", color: "#d47a3f", light: "#f0b15e", radius: 12, health: 19, speed: 112, damage: 7, material: 1 },
-  bulwark: { name: "岩壳怪", color: "#62727d", light: "#9eabb1", radius: 27, health: 82, speed: 40, damage: 15, material: 3 },
+  spore: { name: "漂浮孢子", behavior: "chase", unlockWave: 1, color: "#914e61", light: "#c46c7f", radius: 18, health: 28, speed: 62, damage: 8, material: 1 },
+  runner: { name: "疾行虫", behavior: "chase", unlockWave: 2, color: "#d47a3f", light: "#f0b15e", radius: 12, health: 19, speed: 112, damage: 7, material: 1 },
+  bulwark: { name: "岩壳怪", behavior: "chase", unlockWave: 3, color: "#62727d", light: "#9eabb1", radius: 27, health: 82, speed: 40, damage: 15, armor: 3, material: 3 },
+  shooter: { name: "刺针射手", behavior: "ranged", unlockWave: 4, color: "#7c5ca4", light: "#b48cd4", radius: 17, health: 31, speed: 52, damage: 7, shootCooldown: 2.2, projectileSpeed: 230, preferredRange: 300, material: 2 },
+  charger: { name: "角壳冲锋者", behavior: "charger", unlockWave: 5, color: "#a15b3f", light: "#dc8a62", radius: 22, health: 65, speed: 48, damage: 14, chargeCooldown: 3.2, chargeSpeed: 285, material: 3 },
+  healer: { name: "愈光菌", behavior: "healer", unlockWave: 6, color: "#5b9a70", light: "#8de3a8", radius: 19, health: 48, speed: 46, damage: 6, healCooldown: 3.4, healRadius: 150, healAmount: 14, material: 3 },
+  buffer: { name: "战鼓芽", behavior: "buffer", unlockWave: 7, color: "#b28a45", light: "#efd06e", radius: 20, health: 56, speed: 50, damage: 9, auraRadius: 145, material: 3 },
+  summoner: { name: "虫巢母株", behavior: "summoner", unlockWave: 8, color: "#6f7f43", light: "#a8bd65", radius: 25, health: 88, speed: 35, damage: 10, summonCooldown: 4.2, summonType: "mite", summonCount: 2, material: 4 },
+  mite: { name: "幼生螨", behavior: "chase", unlockWave: 8, color: "#d69b53", light: "#ffd18a", radius: 9, health: 12, speed: 135, damage: 5, material: 1, summonedOnly: true },
+  splitter: { name: "裂殖球", behavior: "splitter", unlockWave: 9, color: "#95629e", light: "#d89cdb", radius: 21, health: 58, speed: 58, damage: 10, splitType: "mite", splitCount: 3, material: 2 },
+  exploder: { name: "爆浆囊", behavior: "exploder", unlockWave: 10, color: "#b94b4b", light: "#ff7b67", radius: 18, health: 43, speed: 75, damage: 20, explosionRadius: 105, material: 3 },
+  orbiter: { name: "环游虫", behavior: "orbiter", unlockWave: 11, color: "#4f8b9c", light: "#7fd4df", radius: 15, health: 39, speed: 90, damage: 9, orbitRange: 190, material: 2 },
+  sniper: { name: "远眺花", behavior: "sniper", unlockWave: 12, color: "#67528d", light: "#a995d1", radius: 18, health: 42, speed: 32, damage: 13, shootCooldown: 3.4, projectileSpeed: 380, preferredRange: 430, material: 3 },
+  shield: { name: "盾甲芽", behavior: "chase", unlockWave: 13, color: "#536b69", light: "#8ba9a4", radius: 24, health: 105, speed: 42, damage: 13, armor: 9, material: 4 },
+  teleporter: { name: "跃迁孢", behavior: "teleporter", unlockWave: 14, color: "#7559b4", light: "#c4a2ff", radius: 17, health: 51, speed: 62, damage: 11, teleportCooldown: 3.1, material: 3 },
+  turret: { name: "扎根炮花", behavior: "turret", unlockWave: 15, color: "#7d7042", light: "#d3bd6b", radius: 23, health: 92, speed: 0, damage: 10, shootCooldown: 1.65, projectileSpeed: 270, preferredRange: 500, armor: 4, material: 4 },
 };
 
-export function getWaveDefinition(wave) {
+export const ELITE_ARCHETYPES = {
+  thorn_champion: { name: "荆冠斗士", behavior: "charger", color: "#9b453d", light: "#ff8b6d", radius: 34, health: 720, speed: 56, damage: 24, armor: 6, chargeCooldown: 2.5, chargeSpeed: 350, material: 18 },
+  storm_caller: { name: "雷芽祭司", behavior: "ranged", color: "#6960a8", light: "#c2b6ff", radius: 31, health: 620, speed: 48, damage: 17, armor: 3, shootCooldown: 1.15, projectileSpeed: 300, projectileCount: 3, preferredRange: 300, material: 18 },
+  brood_keeper: { name: "育巢守望者", behavior: "summoner", color: "#667b3c", light: "#b5d66a", radius: 36, health: 840, speed: 36, damage: 18, armor: 5, summonCooldown: 2.8, summonType: "mite", summonCount: 4, material: 22 },
+  iron_colossus: { name: "铁木巨像", behavior: "healer", color: "#505f61", light: "#a9bcbc", radius: 41, health: 1100, speed: 30, damage: 27, armor: 12, healCooldown: 2.6, healRadius: 190, healAmount: 35, material: 26 },
+};
+
+export const BOSS_ARCHETYPES = {
+  brood_mother: { name: "万巢母体", behavior: "summoner", color: "#6d7438", light: "#d8df6b", radius: 54, health: 3200, speed: 34, damage: 28, armor: 8, summonCooldown: 1.9, summonType: "mite", summonCount: 6, material: 60 },
+  storm_core: { name: "风暴星核", behavior: "ranged", color: "#5351a8", light: "#aab7ff", radius: 50, health: 2850, speed: 46, damage: 22, armor: 6, shootCooldown: 0.85, projectileSpeed: 330, projectileCount: 7, preferredRange: 320, material: 60 },
+  stone_titan: { name: "岩根泰坦", behavior: "charger", color: "#4c5957", light: "#a9bbb4", radius: 60, health: 3900, speed: 31, damage: 36, armor: 15, chargeCooldown: 2.2, chargeSpeed: 390, material: 70 },
+};
+
+export const DANGER_LEVELS = [
+  { id: 0, name: "萌芽", description: "标准远征，适合熟悉构筑。", health: 1, damage: 1, speed: 1, spawn: 1, reward: 1 },
+  { id: 1, name: "蔓延", description: "敌人更坚韧，出现速度略快。", health: 1.12, damage: 1.08, speed: 1.02, spawn: 0.95, reward: 1.04 },
+  { id: 2, name: "侵染", description: "敌人数量和伤害明显提升。", health: 1.25, damage: 1.16, speed: 1.05, spawn: 0.89, reward: 1.08 },
+  { id: 3, name: "灾变", description: "高压生成，精英更难处理。", health: 1.45, damage: 1.26, speed: 1.08, spawn: 0.82, reward: 1.12 },
+  { id: 4, name: "星蚀", description: "最高危险，考验完整构筑。", health: 1.7, damage: 1.38, speed: 1.12, spawn: 0.75, reward: 1.16 },
+];
+
+const ELITE_WAVES = { 6: "thorn_champion", 9: "storm_caller", 13: "brood_keeper", 17: "iron_colossus" };
+const BOSS_IDS = Object.keys(BOSS_ARCHETYPES);
+
+export function getWaveDefinition(wave, dangerId = 0) {
+  const danger = DANGER_LEVELS[dangerId] ?? DANGER_LEVELS[0];
   const duration = wave < 5 ? 20 : wave < 10 ? 25 : wave < 15 ? 30 : wave < 20 ? 35 : 45;
-  const types = ["spore"];
-  if (wave >= 3) types.push("runner");
-  if (wave >= 6) types.push("bulwark");
+  const unlockedTypes = Object.entries(ENEMY_ARCHETYPES)
+    .filter(([, enemy]) => !enemy.summonedOnly && enemy.unlockWave <= wave)
+    .map(([id]) => id);
+  const types = unlockedTypes.slice(Math.max(0, unlockedTypes.length - 7));
+  if (!types.includes("spore")) types.unshift("spore");
+  const bossId = wave === MAX_WAVES ? BOSS_IDS[dangerId % BOSS_IDS.length] : null;
+  const eliteId = ELITE_WAVES[wave] ?? null;
   return {
     wave,
     duration,
     types,
-    spawnInterval: Math.max(0.34, 1.05 - wave * 0.035),
-    healthMultiplier: 1 + (wave - 1) * 0.13,
-    damageMultiplier: 1 + (wave - 1) * 0.08,
-    speedMultiplier: Math.min(1.55, 1 + (wave - 1) * 0.018),
+    special: bossId ? { rank: "boss", id: bossId } : eliteId ? { rank: "elite", id: eliteId } : null,
+    spawnInterval: Math.max(0.26, (1.05 - wave * 0.035) * danger.spawn),
+    healthMultiplier: (1 + (wave - 1) * 0.13) * danger.health,
+    damageMultiplier: (1 + (wave - 1) * 0.08) * danger.damage,
+    speedMultiplier: Math.min(1.75, (1 + (wave - 1) * 0.018) * danger.speed),
+    rewardMultiplier: danger.reward,
   };
 }
