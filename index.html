@@ -69,9 +69,58 @@
             </div>
             <div id="danger-options" class="danger-options"></div>
           </section>
+          <div class="meta-menu">
+            <p id="progress-summary">远征 0 次 · 最高第 0 波 · 通关 0 次</p>
+            <div>
+              <button id="collection-button" class="secondary-button" type="button">图鉴</button>
+              <button id="help-button" class="secondary-button" type="button">新手指南</button>
+              <button id="settings-button" class="secondary-button" type="button">设置</button>
+            </div>
+          </div>
           <div id="character-options" class="choice-grid choice-grid--characters"></div>
           <div id="weapon-options" class="choice-grid choice-grid--weapons" hidden></div>
           <button id="selection-back" class="secondary-button" type="button" hidden>返回选择角色</button>
+        </div>
+
+        <div id="collection-panel" class="screen-panel info-panel" hidden>
+          <div class="info-panel__header">
+            <div><p class="panel-kicker">远征档案</p><h2>内容图鉴</h2></div>
+            <button id="collection-close" class="secondary-button" type="button">返回</button>
+          </div>
+          <div id="collection-summary" class="collection-summary"></div>
+          <div id="collection-content" class="collection-content"></div>
+        </div>
+
+        <div id="help-panel" class="screen-panel info-panel" hidden>
+          <div class="info-panel__header">
+            <div><p class="panel-kicker">第一次远征</p><h2>新手指南</h2></div>
+            <button id="help-close" class="secondary-button" type="button">我明白了</button>
+          </div>
+          <div class="guide-grid">
+            <article><strong>1. 移动躲避</strong><p>使用 WASD、方向键或手机摇杆移动，武器会自动攻击最近目标。</p></article>
+            <article><strong>2. 收集材料</strong><p>击败敌人会掉落材料，同时提供经验。波末会自动回收场上剩余材料。</p></article>
+            <article><strong>3. 选择升级</strong><p>经验满后获得四选一属性。近战、远程、元素和工程需要不同属性。</p></article>
+            <article><strong>4. 波间购物</strong><p>材料可购买武器和道具；锁定会让货物在刷新和下一波后保留。</p></article>
+            <article><strong>5. 合成武器</strong><p>两把同名同品质武器会自动合成，最多携带六把武器。</p></article>
+            <article><strong>6. 完成远征</strong><p>坚持 20 波即可通关，并解锁更高危险等级与新内容。</p></article>
+          </div>
+        </div>
+
+        <div id="settings-panel" class="screen-panel info-panel" hidden>
+          <div class="info-panel__header">
+            <div><p class="panel-kicker">偏好设置</p><h2>游戏设置</h2></div>
+            <button id="settings-close" class="secondary-button" type="button">返回</button>
+          </div>
+          <div class="settings-list">
+            <label><span>主音量 <strong id="volume-value">70%</strong></span><input id="volume-slider" type="range" min="0" max="100" step="5" value="70" /></label>
+            <label class="setting-toggle"><span>屏幕震动</span><input id="shake-toggle" type="checkbox" checked /></label>
+            <label class="setting-toggle"><span>伤害数字</span><input id="damage-number-toggle" type="checkbox" checked /></label>
+          </div>
+          <div class="danger-zone">
+            <h3>存档管理</h3>
+            <p>重置会清除通关、危险等级、角色和图鉴记录。</p>
+            <button id="reset-save-button" class="secondary-button danger-button-reset" type="button">重置存档</button>
+          </div>
         </div>
 
         <div id="upgrade-panel" class="screen-panel" hidden>
@@ -130,6 +179,7 @@
           <h2 id="result-title">探险员倒下了</h2>
           <p id="game-over-summary">你抵达了第 1 波。</p>
           <div id="result-stats" class="result-stats"></div>
+          <div id="unlock-summary" class="unlock-summary" hidden></div>
           <button id="restart-button" class="primary-button" type="button">返回角色选择</button>
         </div>
 

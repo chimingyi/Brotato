@@ -361,18 +361,19 @@ const STAT_ITEMS = ITEM_STAT_SERIES.flatMap(([idPrefix, icon, stat, amounts, nam
     price: basePrice + index * 7,
     modifiers: { [stat]: amount },
     description: `+${amount}${PERCENT_STATS.has(stat) ? "%" : ""} ${STAT_LABELS[stat]}`,
+    maxCount: index === 3 ? 1 : 3,
   }))
 ));
 
 const HYBRID_ITEMS = [
-  { id: "glass_sprout", icon: "🌱", name: "玻璃幼芽", price: 24, modifiers: { damage: 12, maxHealth: -10 }, description: "+12% 伤害，-10 最大生命" },
-  { id: "iron_boots", icon: "🥾", name: "铸铁田靴", price: 22, modifiers: { armor: 3, speed: -5 }, description: "+3 护甲，-5% 速度" },
-  { id: "wild_scope", icon: "🔬", name: "野性瞄镜", price: 23, modifiers: { rangedDamage: 4, range: 30, attackSpeed: -6 }, description: "+4 远程伤害，+30 射程，-6% 攻击速度" },
-  { id: "thorn_crown", icon: "👑", name: "荆棘王冠", price: 25, modifiers: { meleeDamage: 5, critChance: 7, armor: -2 }, description: "+5 近战伤害，+7% 暴击率，-2 护甲" },
-  { id: "storm_battery", icon: "🔋", name: "风暴电池", price: 26, modifiers: { elementalDamage: 5, attackSpeed: 8, harvesting: -4 }, description: "+5 元素伤害，+8% 攻击速度，-4 收获" },
-  { id: "greedy_magnet", icon: "🧲", name: "贪食磁核", price: 21, modifiers: { pickupRange: 55, harvesting: 8, speed: -4 }, description: "+55 拾取范围，+8 收获，-4% 速度" },
-  { id: "repair_drone", icon: "🛠️", name: "修复蜂机", price: 27, modifiers: { engineering: 5, healthRegen: 3, damage: -5 }, description: "+5 工程，+3 生命恢复，-5% 伤害" },
-  { id: "moon_charm", icon: "🌙", name: "月相护符", price: 28, modifiers: { dodge: 10, luck: 12, maxHealth: -8 }, description: "+10% 闪避，+12 幸运，-8 最大生命" },
+  { id: "glass_sprout", icon: "🌱", name: "玻璃幼芽", price: 24, unique: true, group: "core_stance", modifiers: { damage: 12, maxHealth: -10 }, description: "+12% 伤害，-10 最大生命" },
+  { id: "iron_boots", icon: "🥾", name: "铸铁田靴", price: 22, unique: true, group: "core_stance", modifiers: { armor: 3, speed: -5 }, description: "+3 护甲，-5% 速度" },
+  { id: "wild_scope", icon: "🔬", name: "野性瞄镜", price: 23, unique: true, group: "core_stance", modifiers: { rangedDamage: 4, range: 30, attackSpeed: -6 }, description: "+4 远程伤害，+30 射程，-6% 攻击速度" },
+  { id: "thorn_crown", icon: "👑", name: "荆棘王冠", price: 25, unique: true, group: "core_stance", modifiers: { meleeDamage: 5, critChance: 7, armor: -2 }, description: "+5 近战伤害，+7% 暴击率，-2 护甲" },
+  { id: "storm_battery", icon: "🔋", name: "风暴电池", price: 26, unique: true, modifiers: { elementalDamage: 5, attackSpeed: 8, harvesting: -4 }, description: "+5 元素伤害，+8% 攻击速度，-4 收获" },
+  { id: "greedy_magnet", icon: "🧲", name: "贪食磁核", price: 21, unique: true, modifiers: { pickupRange: 55, harvesting: 8, speed: -4 }, description: "+55 拾取范围，+8 收获，-4% 速度" },
+  { id: "repair_drone", icon: "🛠️", name: "修复蜂机", price: 27, unique: true, modifiers: { engineering: 5, healthRegen: 3, damage: -5 }, description: "+5 工程，+3 生命恢复，-5% 伤害" },
+  { id: "moon_charm", icon: "🌙", name: "月相护符", price: 28, unique: true, modifiers: { dodge: 10, luck: 12, maxHealth: -8 }, description: "+10% 闪避，+12 幸运，-8 最大生命" },
 ];
 
 export const ITEMS = [...STAT_ITEMS, ...HYBRID_ITEMS];

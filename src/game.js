@@ -15,6 +15,12 @@ import {
   WEAPONS,
   getWaveDefinition,
 } from "./data.js";
+import {
+  loadProgress,
+  recordRunProgress,
+  resetProgress,
+  saveProgress,
+} from "./storage.js";
 
 const $ = (selector) => document.querySelector(selector);
 const canvas = $("#game-canvas");
@@ -43,6 +49,23 @@ const ui = {
   dangerValue: $("#danger-value"),
   dangerDescription: $("#danger-description"),
   dangerOptions: $("#danger-options"),
+  progressSummary: $("#progress-summary"),
+  collectionButton: $("#collection-button"),
+  helpButton: $("#help-button"),
+  settingsButton: $("#settings-button"),
+  collectionPanel: $("#collection-panel"),
+  collectionClose: $("#collection-close"),
+  collectionSummary: $("#collection-summary"),
+  collectionContent: $("#collection-content"),
+  helpPanel: $("#help-panel"),
+  helpClose: $("#help-close"),
+  settingsPanel: $("#settings-panel"),
+  settingsClose: $("#settings-close"),
+  volumeSlider: $("#volume-slider"),
+  volumeValue: $("#volume-value"),
+  shakeToggle: $("#shake-toggle"),
+  damageNumberToggle: $("#damage-number-toggle"),
+  resetSaveButton: $("#reset-save-button"),
   upgradePanel: $("#upgrade-panel"),
   upgradeOptions: $("#upgrade-options"),
   upgradeRemaining: $("#upgrade-remaining"),
@@ -63,6 +86,7 @@ const ui = {
   resultTitle: $("#result-title"),
   gameOverSummary: $("#game-over-summary"),
   resultStats: $("#result-stats"),
+  unlockSummary: $("#unlock-summary"),
   restartButton: $("#restart-button"),
   soundToggle: $("#sound-toggle"),
   touchControls: $("#touch-controls"),
@@ -82,14 +106,41 @@ const requestedDanger = Number.parseInt(parameters.get("danger") || "", 10);
 const testInvincible = localTestMode && parameters.get("invincible") === "1";
 const requestedStartMaterials = Number.parseInt(parameters.get("startMaterials") || "", 10);
 const requestedStartExperience = Number.parseInt(parameters.get("startExperience") || "", 10);
+const requestedUpgradeRarity = Number.parseInt(parameters.get("upgradeRarity") || "", 10);
+const requestedStartItems = (parameters.get("startItems") || "").split(",").filter(Boolean);
+const requestedStartHealth = Number.parseFloat(parameters.get("startHealth") || "");
 const requestedShopRarity = Number.parseInt(parameters.get("shopRarity") || "", 10);
 const requestedShopWeapon = parameters.get("shopWeapon") || "";
+const requestedShopItem = parameters.get("shopItem") || "";
 const requestedShopRaritySequence = (parameters.get("shopRarities") || "")
   .split(",")
   .map((value) => Number.parseInt(value, 10))
   .filter((value) => Number.isFinite(value));
 const forceWeaponShop = localTestMode
   && (parameters.get("shopWeapons") === "1" || Boolean(WEAPONS[requestedShopWeapon]));
+const forceItemShop = localTestMode
+  && (parameters.get("shopItems") === "1" || ITEMS.some((item) => item.id === requestedShopItem));
+const lockedTestProgress = localTestMode && parameters.get("lockedProgress") === "1";
+const testNoEnemies = localTestMode && parameters.get("noEnemies") === "1";
+const testSingleTree = localTestMode && parameters.get("treeTest") === "1";
+
+const characterIds = CHARACTERS.map((character) => character.id);
+const weaponIds = Object.keys(WEAPONS);
+const itemIds = ITEMS.map((item) => item.id);
+const enemyCatalog = [
+  ...Object.entries(ENEMY_ARCHETYPES).map(([id, definition]) => ({ key: `normal:${id}`, id, rank: "normal", definition })),
+  ...Object.entries(ELITE_ARCHETYPES).map(([id, definition]) => ({ key: `elite:${id}`, id, rank: "elite", definition })),
+  ...Object.entries(BOSS_ARCHETYPES).map(([id, definition]) => ({ key: `boss:${id}`, id, rank: "boss", definition })),
+];
+const enemyIds = enemyCatalog.map((entry) => entry.key);
+let progress = loadProgress({ testMode: localTestMode, lockedTest: lockedTestProgress, characterIds, weaponIds, itemIds, enemyIds });
+for (const character of CHARACTERS) {
+  if (!progress.unlockedCharacters.includes(character.id)) continue;
+  for (const weaponId of character.allowedWeapons) {
+    if (!progress.unlockedWeapons.includes(weaponId)) progress.unlockedWeapons.push(weaponId);
+  }
+}
+saveProgress(progress, localTestMode);
 
 const game = {
   phase: "loadout",
@@ -119,10 +170,13 @@ const game = {
   spawnTimer: 0,
   enemies: [],
   enemyProjectiles: [],
+  destructibles: [],
+  consumables: [],
   projectiles: [],
   meleeEffects: [],
   gems: [],
   particles: [],
+  floatingTexts: [],
   keys: new Set(),
   touchX: 0,
   touchY: 0,
@@ -130,6 +184,9 @@ const game = {
   lastFrameTime: 0,
   nextUid: 1,
   testShopOfferIndex: 0,
+  encounteredEnemies: new Set(),
+  progressRecorded: false,
+  shakeTime: 0,
   metrics: createEmptyMetrics(),
 };
 
@@ -144,7 +201,11 @@ const player = {
   regenAccumulator: 0,
 };
 
-const audio = { context: null, enabled: true };
+const audio = {
+  context: null,
+  enabled: progress.settings.soundEnabled,
+  masterVolume: progress.settings.masterVolume,
+};
 
 function clamp(value, minimum, maximum) {
   return Math.min(Math.max(value, minimum), maximum);
@@ -164,6 +225,11 @@ function createEmptyMetrics() {
     heals: 0,
     charges: 0,
     specials: 0,
+    damageNumbers: 0,
+    shakes: 0,
+    treesDestroyed: 0,
+    consumablesDropped: 0,
+    consumablesPicked: 0,
   };
 }
 
@@ -219,7 +285,7 @@ function playSound(name) {
   oscillator.type = sound[4];
   oscillator.frequency.setValueAtTime(sound[0], now);
   oscillator.frequency.exponentialRampToValueAtTime(sound[1], now + sound[2]);
-  gain.gain.setValueAtTime(sound[3], now);
+  gain.gain.setValueAtTime(sound[3] * audio.masterVolume, now);
   gain.gain.exponentialRampToValueAtTime(0.0001, now + sound[2]);
   oscillator.connect(gain);
   gain.connect(audio.context.destination);
@@ -232,10 +298,11 @@ function applyModifiers(modifiers, healForMaxHealth = true) {
   for (const [stat, amount] of Object.entries(modifiers)) {
     game.stats[stat] = (game.stats[stat] ?? 0) + amount;
   }
+  game.stats.maxHealth = Math.max(1, game.stats.maxHealth);
   if (healForMaxHealth && game.stats.maxHealth > oldMaxHealth) {
     player.health += game.stats.maxHealth - oldMaxHealth;
   }
-  player.health = Math.min(player.health, game.stats.maxHealth);
+  player.health = Math.min(player.health, getEffectiveStat("maxHealth"));
 }
 
 function getWeaponTagState() {
@@ -261,7 +328,16 @@ function getEffectiveStat(stat) {
   for (const tagState of getWeaponTagState()) {
     if (tagState.stat === stat) value += tagState.bonus;
   }
-  return value;
+  const limits = {
+    maxHealth: [1, Number.POSITIVE_INFINITY],
+    attackSpeed: [-80, Number.POSITIVE_INFINITY],
+    critChance: [0, 100],
+    dodge: [0, 60],
+    lifeSteal: [0, 100],
+    speed: [-60, Number.POSITIVE_INFINITY],
+    pickupRange: [20, Number.POSITIVE_INFINITY],
+  };
+  return limits[stat] ? clamp(value, limits[stat][0], limits[stat][1]) : value;
 }
 
 function createWeapon(id, rarity = 1) {
@@ -291,20 +367,121 @@ function getDamageAfterArmor(rawDamage) {
   return Math.max(1, rawDamage * (1 - reduction));
 }
 
+function getCharacterUnlockText(characterId) {
+  const requirements = {
+    ember_gardener: "抵达第 5 波",
+    gear_tender: "抵达第 8 波",
+    crystal_duelist: "抵达第 10 波",
+    pollen_alchemist: "抵达第 12 波",
+    moon_hunter: "抵达第 14 波",
+    storm_runner: "抵达第 16 波",
+    field_medic: "抵达第 18 波",
+    scrap_collector: "完成一次远征",
+    sun_breaker: "完成危险 D2",
+  };
+  return requirements[characterId] ?? "初始解锁";
+}
+
+function renderProgressSummary() {
+  ui.progressSummary.textContent = `远征 ${progress.runs} 次 · 最高第 ${progress.bestWave} 波 · 通关 ${progress.wins} 次`;
+}
+
+function createCollectionGroup(title, entries) {
+  const section = document.createElement("section");
+  section.className = "collection-group";
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  const grid = document.createElement("div");
+  grid.className = "collection-grid";
+  for (const entry of entries) {
+    const card = document.createElement("div");
+    card.className = `collection-entry${entry.unlocked ? "" : " is-locked"}`;
+    card.innerHTML = entry.unlocked
+      ? `<strong>${entry.icon} ${entry.name}</strong><span>${entry.description}</span>`
+      : `<strong>🔒 未解锁</strong><span>${entry.hint}</span>`;
+    grid.append(card);
+  }
+  section.append(heading, grid);
+  return section;
+}
+
+function renderCollection() {
+  const discoveredEnemySet = new Set(progress.discoveredEnemies);
+  ui.collectionSummary.innerHTML = `
+    <div><strong>${progress.unlockedCharacters.length} / ${CHARACTERS.length}</strong><span>探险员</span></div>
+    <div><strong>${progress.unlockedWeapons.length} / ${weaponIds.length}</strong><span>武器</span></div>
+    <div><strong>${progress.unlockedItems.length} / ${ITEMS.length}</strong><span>道具</span></div>
+    <div><strong>${discoveredEnemySet.size} / ${enemyCatalog.length}</strong><span>敌人记录</span></div>
+  `;
+  const characterEntries = CHARACTERS.map((character) => ({
+    icon: character.icon,
+    name: character.name,
+    description: character.tagline,
+    hint: getCharacterUnlockText(character.id),
+    unlocked: progress.unlockedCharacters.includes(character.id),
+  }));
+  const weaponEntries = Object.values(WEAPONS).map((weapon) => ({
+    icon: weapon.icon,
+    name: weapon.name,
+    description: `${weapon.tags.join(" / ")} · ${weapon.description}`,
+    hint: "继续提高最高波次",
+    unlocked: progress.unlockedWeapons.includes(weapon.id),
+  }));
+  const itemEntries = ITEMS.map((item) => ({
+    icon: item.icon,
+    name: item.name,
+    description: item.description,
+    hint: "继续完成远征",
+    unlocked: progress.unlockedItems.includes(item.id),
+  }));
+  const enemyEntries = enemyCatalog.map((enemy) => ({
+    icon: enemy.rank === "boss" ? "👑" : enemy.rank === "elite" ? "⚠️" : "👾",
+    name: enemy.definition.name,
+    description: enemy.rank === "boss" ? "首领" : enemy.rank === "elite" ? "精英" : "普通敌人",
+    hint: "在远征中遇见它",
+    unlocked: discoveredEnemySet.has(enemy.key),
+  }));
+  ui.collectionContent.replaceChildren(
+    createCollectionGroup("探险员", characterEntries),
+    createCollectionGroup("武器", weaponEntries),
+    createCollectionGroup("道具", itemEntries),
+    createCollectionGroup("敌人", enemyEntries),
+  );
+}
+
+function renderSettings() {
+  ui.volumeSlider.value = String(Math.round(progress.settings.masterVolume * 100));
+  ui.volumeValue.textContent = `${ui.volumeSlider.value}%`;
+  ui.shakeToggle.checked = progress.settings.screenShake;
+  ui.damageNumberToggle.checked = progress.settings.damageNumbers;
+  ui.resetSaveButton.textContent = "重置存档";
+  ui.resetSaveButton.dataset.confirming = "false";
+}
+
+function persistSettings() {
+  audio.enabled = progress.settings.soundEnabled;
+  audio.masterVolume = progress.settings.masterVolume;
+  ui.soundToggle.setAttribute("aria-pressed", String(audio.enabled));
+  ui.soundToggle.textContent = audio.enabled ? "音效：开" : "音效：关";
+  saveProgress(progress, localTestMode);
+}
+
 function renderCharacterChoices() {
   ui.characterOptions.replaceChildren();
   for (const character of CHARACTERS) {
+    const unlocked = progress.unlockedCharacters.includes(character.id);
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "choice-card";
+    button.className = `choice-card${unlocked ? "" : " is-locked"}`;
     button.dataset.characterId = character.id;
+    button.disabled = !unlocked;
     button.innerHTML = `
-      <span class="choice-icon">${character.icon}</span>
+      <span class="choice-icon">${unlocked ? character.icon : "🔒"}</span>
       <span class="choice-name">${character.name}</span>
       <span class="choice-tagline">${character.tagline}</span>
-      <span class="choice-rules">${character.rules.join("<br>")}</span>
+      <span class="choice-rules">${unlocked ? character.rules.join("<br>") : `解锁条件：${getCharacterUnlockText(character.id)}`}</span>
     `;
-    button.addEventListener("click", () => selectCharacter(character.id));
+    if (unlocked) button.addEventListener("click", () => selectCharacter(character.id));
     ui.characterOptions.append(button);
   }
 }
@@ -312,15 +489,19 @@ function renderCharacterChoices() {
 function renderDangerOptions() {
   ui.dangerOptions.replaceChildren();
   for (const danger of DANGER_LEVELS) {
+    const unlocked = danger.id <= progress.highestDangerUnlocked;
     const button = document.createElement("button");
     button.type = "button";
     button.className = "danger-button";
     button.setAttribute("aria-pressed", String(game.danger === danger.id));
-    button.textContent = `D${danger.id} ${danger.name}`;
-    button.addEventListener("click", () => {
-      game.danger = danger.id;
-      renderDangerOptions();
-    });
+    button.disabled = !unlocked;
+    button.textContent = unlocked ? `D${danger.id} ${danger.name}` : `🔒 D${danger.id}`;
+    if (unlocked) {
+      button.addEventListener("click", () => {
+        game.danger = danger.id;
+        renderDangerOptions();
+      });
+    }
     ui.dangerOptions.append(button);
   }
   const selectedDanger = DANGER_LEVELS[game.danger];
@@ -358,6 +539,7 @@ function selectCharacter(characterId) {
 function showCharacterSelection() {
   game.phase = "loadout";
   game.selectedCharacter = null;
+  game.danger = Math.min(game.danger, progress.highestDangerUnlocked);
   game.paused = false;
   ui.loadoutPanel.hidden = false;
   ui.characterOptions.hidden = false;
@@ -374,6 +556,10 @@ function showCharacterSelection() {
   ui.specialHud.hidden = true;
   ui.experienceWrap.hidden = true;
   ui.touchControls.hidden = true;
+  ui.collectionPanel.hidden = true;
+  ui.helpPanel.hidden = true;
+  ui.settingsPanel.hidden = true;
+  renderProgressSummary();
   renderCharacterChoices();
   renderDangerOptions();
   render();
@@ -402,10 +588,20 @@ function beginRun(startingWeaponId) {
   game.shopOffers = [];
   game.testShopOfferIndex = 0;
   game.metrics = createEmptyMetrics();
+  game.encounteredEnemies = new Set();
+  game.progressRecorded = false;
+  game.floatingTexts = [];
+  game.shakeTime = 0;
   game.inventory = [createWeapon(startingWeaponId)];
-  game.items = [];
+  game.items = localTestMode
+    ? requestedStartItems.filter((itemId) => ITEMS.some((item) => item.id === itemId))
+    : [];
   game.stats = { ...BASE_STATS };
   applyModifiers(game.selectedCharacter.modifiers, false);
+  for (const itemId of game.items) {
+    const item = ITEMS.find((entry) => entry.id === itemId);
+    if (item) applyModifiers(item.modifiers, false);
+  }
   player.health = game.stats.maxHealth;
   startWave();
 }
@@ -428,6 +624,8 @@ function startWave() {
   game.spawnTimer = 0.2;
   game.enemies = [];
   game.enemyProjectiles = [];
+  game.destructibles = [];
+  game.consumables = [];
   game.projectiles = [];
   game.meleeEffects = [];
   game.gems = [];
@@ -435,8 +633,12 @@ function startWave() {
   player.x = canvas.width / 2;
   player.y = canvas.height / 2;
   player.health = game.stats.maxHealth;
+  if (localTestMode && Number.isFinite(requestedStartHealth)) {
+    player.health = clamp(requestedStartHealth, 1, game.stats.maxHealth);
+  }
   player.invulnerableTimer = 0;
   player.regenAccumulator = 0;
+  spawnDestructibles();
   if (game.waveDefinition.special) spawnSpecialEnemy();
   for (const weapon of game.inventory) weapon.cooldown = Math.random() * 0.2;
 
@@ -452,6 +654,49 @@ function startWave() {
   ui.touchControls.hidden = false;
   updateHud();
   playSound("wave");
+}
+
+function spawnDestructibles() {
+  const count = testSingleTree ? 1 : 2 + Math.floor(game.wave / 6);
+  for (let index = 0; index < count; index += 1) {
+    const x = testSingleTree && index === 0 ? player.x + 105 : 70 + Math.random() * (canvas.width - 140);
+    const y = testSingleTree && index === 0 ? player.y : 110 + Math.random() * (canvas.height - 180);
+    game.destructibles.push({
+      x,
+      y,
+      radius: 24,
+      health: testSingleTree ? 8 : 28 + game.wave * 2,
+      maxHealth: testSingleTree ? 8 : 28 + game.wave * 2,
+    });
+  }
+}
+
+function findNearestDestructible(maxRange) {
+  let nearest = null;
+  let nearestDistance = maxRange * maxRange;
+  for (const destructible of game.destructibles) {
+    const currentDistance = distanceSquared(player, destructible);
+    if (currentDistance < nearestDistance) {
+      nearest = destructible;
+      nearestDistance = currentDistance;
+    }
+  }
+  return nearest;
+}
+
+function damageDestructible(index, damage) {
+  const destructible = game.destructibles[index];
+  if (!destructible) return;
+  destructible.health -= damage;
+  createBurst(destructible.x, destructible.y, "#7faf59", 4);
+  if (destructible.health > 0) return;
+  game.destructibles.splice(index, 1);
+  game.metrics.treesDestroyed += 1;
+  const dropChance = clamp(0.55 + Math.max(0, getEffectiveStat("luck")) * 0.005, 0.55, 0.92);
+  if (testSingleTree || Math.random() < dropChance) {
+    game.consumables.push({ x: destructible.x, y: destructible.y, radius: 9, healing: 8 });
+    game.metrics.consumablesDropped += 1;
+  }
 }
 
 function getEnemyArchetype(rank, type) {
@@ -510,6 +755,7 @@ function spawnEnemy(type = null, options = {}) {
     orbitDirection: Math.random() < 0.5 ? -1 : 1,
   };
   game.enemies.push(enemy);
+  game.encounteredEnemies.add(`${rank}:${enemyType}`);
   if (rank !== "normal") game.metrics.specials += 1;
   return enemy;
 }
@@ -536,7 +782,7 @@ function findNearestEnemy(maxRange = Number.POSITIVE_INFINITY) {
 function fireWeapon(instance) {
   const definition = WEAPONS[instance.id];
   const range = Math.max(45, definition.range + getEffectiveStat("range"));
-  const target = findNearestEnemy(range);
+  const target = findNearestEnemy(range) ?? findNearestDestructible(range);
   if (!target) return false;
   const dx = target.x - player.x;
   const dy = target.y - player.y;
@@ -562,6 +808,12 @@ function fireWeapon(instance) {
       if (distanceSquared(player, enemy) <= (range + enemy.radius) ** 2) {
         applyWeaponStatus(enemy, definition);
         damageEnemy(index, damage, definition.knockback, directionX, directionY);
+      }
+    }
+    for (let index = game.destructibles.length - 1; index >= 0; index -= 1) {
+      const destructible = game.destructibles[index];
+      if (distanceSquared(player, destructible) <= (range + destructible.radius) ** 2) {
+        damageDestructible(index, damage);
       }
     }
   } else {
@@ -615,6 +867,10 @@ function applyWeaponStatus(enemy, source) {
 function damageArea(projectile, directTarget) {
   if (projectile.explosionRadius <= 0) return;
   game.metrics.explosions += 1;
+  if (progress.settings.screenShake) {
+    game.shakeTime = Math.max(game.shakeTime, 0.14);
+    game.metrics.shakes += 1;
+  }
   const targets = [...game.enemies];
   createBurst(projectile.x, projectile.y, projectile.color, 18);
   for (const target of targets) {
@@ -663,6 +919,17 @@ function damageEnemy(index, baseDamage, knockback, directionX, directionY) {
   const enemyArmor = enemy.armor ?? 0;
   const armorReduction = enemyArmor >= 0 ? enemyArmor / (enemyArmor + 22) : enemyArmor / (22 - enemyArmor);
   const damage = Math.max(1, rawDamage * (1 - armorReduction));
+  if (progress.settings.damageNumbers) {
+    game.floatingTexts.push({
+      x: enemy.x,
+      y: enemy.y - enemy.radius,
+      text: String(Math.round(damage)),
+      color: critical ? "#ffe48c" : "#f5eee0",
+      life: 0.65,
+      maxLife: 0.65,
+    });
+    game.metrics.damageNumbers += 1;
+  }
   enemy.health -= damage;
   enemy.hitFlash = 0.08;
   enemy.x += directionX * (knockback + getEffectiveStat("knockback"));
@@ -779,6 +1046,14 @@ function updateProjectiles(deltaTime) {
       else shouldRemove = true;
     }
 
+    for (let treeIndex = game.destructibles.length - 1; treeIndex >= 0 && !shouldRemove; treeIndex -= 1) {
+      const destructible = game.destructibles[treeIndex];
+      const hitDistance = projectile.radius + destructible.radius;
+      if (distanceSquared(projectile, destructible) > hitDistance * hitDistance) continue;
+      damageDestructible(treeIndex, projectile.damage);
+      shouldRemove = true;
+    }
+
     if (shouldRemove) game.projectiles.splice(projectileIndex, 1);
   }
 }
@@ -792,6 +1067,10 @@ function hurtPlayer(rawDamage) {
   if (Math.random() * 100 >= clamp(getEffectiveStat("dodge"), 0, 60)) {
     player.health -= getDamageAfterArmor(rawDamage);
     playSound("hurt");
+    if (progress.settings.screenShake) {
+      game.shakeTime = Math.max(game.shakeTime, 0.18);
+      game.metrics.shakes += 1;
+    }
   } else {
     createBurst(player.x, player.y, "#c6f4d0", 6);
   }
@@ -997,6 +1276,38 @@ function updateGems(deltaTime) {
   }
 }
 
+function updateConsumables(deltaTime) {
+  for (let index = game.consumables.length - 1; index >= 0; index -= 1) {
+    const consumable = game.consumables[index];
+    const deltaX = player.x - consumable.x;
+    const deltaY = player.y - consumable.y;
+    const distance = Math.hypot(deltaX, deltaY);
+    const attractionRange = 70 + Math.max(0, getEffectiveStat("pickupRange"));
+    if (distance > 0 && distance <= attractionRange) {
+      const attractionSpeed = 190;
+      consumable.x += deltaX / distance * attractionSpeed * deltaTime;
+      consumable.y += deltaY / distance * attractionSpeed * deltaTime;
+    }
+    const pickupDistance = player.radius + consumable.radius + 5;
+    if (distanceSquared(player, consumable) > pickupDistance * pickupDistance) continue;
+    if (player.health >= getEffectiveStat("maxHealth")) continue;
+    const previousHealth = player.health;
+    player.health = Math.min(getEffectiveStat("maxHealth"), player.health + consumable.healing);
+    game.consumables.splice(index, 1);
+    game.metrics.consumablesPicked += 1;
+    game.floatingTexts.push({
+      x: player.x,
+      y: player.y - 28,
+      text: `+${Math.round(player.health - previousHealth)}`,
+      color: "#9bf59f",
+      life: .75,
+      maxLife: .75,
+    });
+    createBurst(player.x, player.y, "#9ae58f", 8);
+    playSound("pickup");
+  }
+}
+
 function createBurst(x, y, color, amount) {
   for (let index = 0; index < amount; index += 1) {
     const angle = Math.random() * Math.PI * 2;
@@ -1015,6 +1326,7 @@ function createBurst(x, y, color, amount) {
 }
 
 function updateEffects(deltaTime) {
+  game.shakeTime = Math.max(0, game.shakeTime - deltaTime);
   for (let index = game.particles.length - 1; index >= 0; index -= 1) {
     const particle = game.particles[index];
     particle.x += particle.velocityX * deltaTime;
@@ -1028,6 +1340,12 @@ function updateEffects(deltaTime) {
     game.meleeEffects[index].remainingLife -= deltaTime;
     if (game.meleeEffects[index].remainingLife <= 0) game.meleeEffects.splice(index, 1);
   }
+  for (let index = game.floatingTexts.length - 1; index >= 0; index -= 1) {
+    const floatingText = game.floatingTexts[index];
+    floatingText.life -= deltaTime;
+    floatingText.y -= 30 * deltaTime;
+    if (floatingText.life <= 0) game.floatingTexts.splice(index, 1);
+  }
 }
 
 function updateWave(deltaTime) {
@@ -1038,7 +1356,7 @@ function updateWave(deltaTime) {
     return;
   }
   game.spawnTimer -= deltaTime;
-  if (game.spawnTimer <= 0) {
+  if (game.spawnTimer <= 0 && !testNoEnemies) {
     spawnEnemy();
     game.spawnTimer = game.waveDefinition.spawnInterval;
   }
@@ -1049,6 +1367,7 @@ function updateWave(deltaTime) {
   if (game.phase !== "wave") return;
   updateEnemyProjectiles(deltaTime);
   updateGems(deltaTime);
+  updateConsumables(deltaTime);
   updateEffects(deltaTime);
   updateHud();
 }
@@ -1081,8 +1400,31 @@ function endWave() {
   }
 }
 
+function rollUpgradeRarity() {
+  if (localTestMode && Number.isFinite(requestedUpgradeRarity)) return clamp(requestedUpgradeRarity, 1, 4);
+  const progressBonus = Math.min(0.18, game.level * 0.006 + game.wave * 0.004);
+  const luckBonus = Math.max(0, getEffectiveStat("luck")) * 0.0015;
+  const roll = Math.random();
+  if (roll < 0.02 + progressBonus * 0.2 + luckBonus * 0.35) return 4;
+  if (roll < 0.12 + progressBonus * 0.55 + luckBonus) return 3;
+  if (roll < 0.38 + progressBonus + luckBonus * 1.5) return 2;
+  return 1;
+}
+
+function describeUpgradeModifiers(modifiers) {
+  return Object.entries(modifiers).map(([stat, amount]) => {
+    const percent = ["damage", "attackSpeed", "critChance", "dodge", "speed", "lifeSteal"].includes(stat) ? "%" : "";
+    return `${amount >= 0 ? "+" : ""}${amount}${percent} ${STAT_LABELS[stat]}`;
+  }).join("，");
+}
+
 function getUpgradeChoices() {
-  return shuffle(LEVEL_UPGRADES).slice(0, 4);
+  return shuffle(LEVEL_UPGRADES).slice(0, 4).map((upgrade) => {
+    const rarity = rollUpgradeRarity();
+    const multiplier = RARITIES[rarity - 1].multiplier;
+    const modifiers = Object.fromEntries(Object.entries(upgrade.modifiers).map(([stat, amount]) => [stat, Math.max(1, Math.round(amount * multiplier))]));
+    return { ...upgrade, rarity, modifiers, description: describeUpgradeModifiers(modifiers) };
+  });
 }
 
 function openUpgradePanel() {
@@ -1092,12 +1434,15 @@ function openUpgradePanel() {
   ui.upgradeRemaining.textContent = `还有 ${game.pendingUpgrades} 次升级选择`;
   ui.upgradeOptions.replaceChildren();
   for (const upgrade of getUpgradeChoices()) {
+    const rarity = RARITIES[upgrade.rarity - 1];
     const button = document.createElement("button");
     button.type = "button";
     button.className = "choice-card";
+    button.style.setProperty("--rarity", rarity.color);
     button.innerHTML = `
       <span class="choice-icon">${upgrade.icon}</span>
       <span class="choice-name">${upgrade.name}</span>
+      <span class="shop-card__type">${rarity.name}升级</span>
       <span class="choice-tagline">${upgrade.description}</span>
     `;
     button.addEventListener("click", () => chooseUpgrade(upgrade));
@@ -1126,12 +1471,21 @@ function rollRarity() {
   return 1;
 }
 
-function createShopOffer() {
-  const offersWeapon = forceWeaponShop || Math.random() < 0.48;
+function getBiasedWeapon(pool) {
+  const ownedTags = new Set(game.inventory.flatMap((instance) => WEAPONS[instance.id].tags));
+  const matchingWeapons = pool.filter((weapon) => weapon.tags.some((tag) => ownedTags.has(tag)));
+  if (matchingWeapons.length > 0 && Math.random() < 0.68) return randomItem(matchingWeapons);
+  return randomItem(pool);
+}
+
+function createShopOffer(forcedType = null) {
+  const offersWeapon = forceWeaponShop
+    || (!forceItemShop && (forcedType === "weapon" || (forcedType !== "item" && Math.random() < 0.48)));
   if (offersWeapon) {
+    const unlockedWeaponPool = progress.unlockedWeapons.map((id) => WEAPONS[id]).filter(Boolean);
     const weapon = localTestMode && WEAPONS[requestedShopWeapon]
       ? WEAPONS[requestedShopWeapon]
-      : randomItem(Object.values(WEAPONS));
+      : getBiasedWeapon(unlockedWeaponPool.length > 0 ? unlockedWeaponPool : Object.values(WEAPONS));
     const sequenceRarity = requestedShopRaritySequence[game.testShopOfferIndex];
     game.testShopOfferIndex += 1;
     const rarity = localTestMode && Number.isFinite(sequenceRarity)
@@ -1149,7 +1503,12 @@ function createShopOffer() {
       sold: false,
     };
   }
-  const item = randomItem(ITEMS);
+  const unlockedItemPool = ITEMS.filter((item) => progress.unlockedItems.includes(item.id));
+  const eligibleItemPool = unlockedItemPool.filter((item) => canAddItem(item));
+  const forcedItem = ITEMS.find((item) => item.id === requestedShopItem);
+  const item = localTestMode && forcedItem
+    ? forcedItem
+    : randomItem(eligibleItemPool.length > 0 ? eligibleItemPool : unlockedItemPool.length > 0 ? unlockedItemPool : ITEMS);
   return {
     uid: game.nextUid++,
     type: "item",
@@ -1161,11 +1520,24 @@ function createShopOffer() {
   };
 }
 
-function refreshShopOffers(preserveLocked = true) {
+function refreshShopOffers(preserveLocked = true, guaranteeWeapons = false) {
   const nextOffers = [];
+  const minimumWeapons = forceItemShop ? 0 : guaranteeWeapons ? (game.wave <= 2 ? 2 : 1) : 0;
+  const preservedOffers = game.shopOffers.map((offer) => (preserveLocked && offer?.locked && !offer.sold ? offer : null));
+  let weaponCount = preservedOffers.filter((offer) => offer?.type === "weapon").length;
+  let remainingReplaceable = 4 - preservedOffers.filter(Boolean).length;
   for (let index = 0; index < 4; index += 1) {
-    const existing = game.shopOffers[index];
-    nextOffers.push(preserveLocked && existing?.locked && !existing.sold ? existing : createShopOffer());
+    const existing = preservedOffers[index];
+    if (existing) {
+      nextOffers.push(existing);
+      continue;
+    }
+    const neededWeapons = Math.max(0, minimumWeapons - weaponCount);
+    const forceWeapon = neededWeapons >= remainingReplaceable;
+    const offer = createShopOffer(forceWeapon ? "weapon" : null);
+    nextOffers.push(offer);
+    if (offer.type === "weapon") weaponCount += 1;
+    remainingReplaceable -= 1;
   }
   game.shopOffers = nextOffers;
   renderShop();
@@ -1178,13 +1550,24 @@ function openShop() {
   ui.shopPanel.hidden = false;
   ui.shopTitle.textContent = `D${game.danger} · 第 ${game.wave} 波完成`;
   ui.nextWaveButton.textContent = `开始第 ${game.wave + 1} 波`;
-  refreshShopOffers(true);
+  refreshShopOffers(true, true);
 }
 
 function getOfferDefinition(offer) {
   return offer.type === "weapon"
     ? WEAPONS[offer.definitionId]
     : ITEMS.find((item) => item.id === offer.definitionId);
+}
+
+function canAddItem(item) {
+  const ownedCount = game.items.filter((itemId) => itemId === item.id).length;
+  if (item.unique && ownedCount > 0) return false;
+  if (item.maxCount && ownedCount >= item.maxCount) return false;
+  if (item.group) {
+    const ownsGroupItem = game.items.some((itemId) => ITEMS.find((entry) => entry.id === itemId)?.group === item.group);
+    if (ownsGroupItem && ownedCount === 0) return false;
+  }
+  return true;
 }
 
 function canAddWeapon(offer) {
@@ -1207,6 +1590,7 @@ function buyOffer(offerIndex) {
   const offer = game.shopOffers[offerIndex];
   if (!offer || offer.sold || game.materials < offer.price) return;
   if (offer.type === "weapon" && !canAddWeapon(offer)) return;
+  if (offer.type === "item" && !canAddItem(getOfferDefinition(offer))) return;
   game.materials -= offer.price;
 
   if (offer.type === "weapon") {
@@ -1263,7 +1647,9 @@ function renderShop() {
     if (offer.sold) {
       card.innerHTML = `<span class="choice-icon">✓</span><span class="choice-name">已购买</span>`;
     } else {
-      const canBuy = game.materials >= offer.price && (offer.type !== "weapon" || canAddWeapon(offer));
+      const canBuy = game.materials >= offer.price
+        && (offer.type !== "weapon" || canAddWeapon(offer))
+        && (offer.type !== "item" || canAddItem(definition));
       card.innerHTML = `
         <span class="shop-card__type">${offer.type === "weapon" ? `${rarity.name}武器` : "道具"}</span>
         <span class="choice-icon">${definition.icon}</span>
@@ -1379,7 +1765,52 @@ function updateHud() {
   renderWeaponBar();
 }
 
+function recordCurrentRun(won) {
+  if (game.progressRecorded) return null;
+  game.progressRecorded = true;
+  const unlocks = recordRunProgress(progress, {
+    won,
+    wave: game.wave,
+    danger: game.danger,
+    weaponIds,
+    itemIds,
+    encounteredEnemyIds: [...game.encounteredEnemies],
+  });
+  for (const character of CHARACTERS) {
+    if (!progress.unlockedCharacters.includes(character.id)) continue;
+    for (const weaponId of character.allowedWeapons) {
+      if (!progress.unlockedWeapons.includes(weaponId)) {
+        progress.unlockedWeapons.push(weaponId);
+        unlocks.weapons.push(weaponId);
+      }
+    }
+  }
+  saveProgress(progress, localTestMode);
+  return unlocks;
+}
+
+function describeUnlocks(unlocks) {
+  if (!unlocks) return [];
+  const lines = [];
+  if (unlocks.danger !== null) lines.push(`危险 D${unlocks.danger}`);
+  for (const id of unlocks.characters) {
+    const character = CHARACTERS.find((entry) => entry.id === id);
+    if (character) lines.push(`探险员：${character.name}`);
+  }
+  for (const id of unlocks.weapons.slice(0, 4)) {
+    if (WEAPONS[id]) lines.push(`武器：${WEAPONS[id].name}`);
+  }
+  if (unlocks.weapons.length > 4) lines.push(`另外 ${unlocks.weapons.length - 4} 把武器`);
+  for (const id of unlocks.items.slice(0, 4)) {
+    const item = ITEMS.find((entry) => entry.id === id);
+    if (item) lines.push(`道具：${item.name}`);
+  }
+  if (unlocks.items.length > 4) lines.push(`另外 ${unlocks.items.length - 4} 件道具`);
+  return lines;
+}
+
 function finishRun(won) {
+  const unlockLines = describeUnlocks(recordCurrentRun(won));
   game.phase = "gameover";
   game.paused = false;
   game.keys.clear();
@@ -1401,6 +1832,10 @@ function finishRun(won) {
     <div><strong>${game.materials}</strong><span>剩余材料</span></div>
     <div><strong>${game.level}</strong><span>最终等级</span></div>
   `;
+  ui.unlockSummary.hidden = unlockLines.length === 0;
+  ui.unlockSummary.innerHTML = unlockLines.length > 0
+    ? `<strong>新解锁</strong><br>${unlockLines.join("<br>")}`
+    : "";
   playSound(won ? "wave" : "fail");
 }
 
@@ -1472,6 +1907,35 @@ function drawEnemy(enemy) {
   context.restore();
 }
 
+function drawDestructible(destructible) {
+  context.save();
+  context.translate(destructible.x, destructible.y);
+  context.fillStyle = "rgba(0,0,0,.25)";
+  context.beginPath();
+  context.ellipse(0, 19, 25, 8, 0, 0, Math.PI * 2);
+  context.fill();
+  context.fillStyle = "#765033";
+  context.strokeStyle = "#4d3827";
+  context.lineWidth = 3;
+  context.fillRect(-6, -3, 12, 26);
+  context.strokeRect(-6, -3, 12, 26);
+  context.fillStyle = "#6fa34c";
+  context.strokeStyle = "#c1df79";
+  context.beginPath();
+  context.arc(-12, -10, 15, 0, Math.PI * 2);
+  context.arc(10, -13, 17, 0, Math.PI * 2);
+  context.arc(0, -27, 18, 0, Math.PI * 2);
+  context.fill();
+  context.stroke();
+  if (destructible.health < destructible.maxHealth) {
+    context.fillStyle = "rgba(0,0,0,.7)";
+    context.fillRect(-22, -51, 44, 5);
+    context.fillStyle = "#a9dc70";
+    context.fillRect(-22, -51, 44 * Math.max(0, destructible.health / destructible.maxHealth), 5);
+  }
+  context.restore();
+}
+
 function drawPlayer() {
   const character = game.selectedCharacter ?? CHARACTERS[0];
   context.save();
@@ -1515,6 +1979,29 @@ function drawCombatObjects() {
     context.strokeRect(-gem.radius, -gem.radius, gem.radius * 2, gem.radius * 2);
     context.restore();
   }
+  for (const consumable of game.consumables) {
+    context.save();
+    context.translate(consumable.x, consumable.y);
+    context.fillStyle = "rgba(0,0,0,.24)";
+    context.beginPath();
+    context.ellipse(0, 8, 11, 4, 0, 0, Math.PI * 2);
+    context.fill();
+    context.fillStyle = "#ee6259";
+    context.strokeStyle = "#ffd8a8";
+    context.lineWidth = 2;
+    context.beginPath();
+    context.arc(0, 0, consumable.radius, 0, Math.PI * 2);
+    context.fill();
+    context.stroke();
+    context.fillStyle = "#8dc45c";
+    context.beginPath();
+    context.ellipse(2, -10, 5, 3, -.45, 0, Math.PI * 2);
+    context.fill();
+    context.fillStyle = "#fff0bd";
+    context.fillRect(-1.5, -5, 3, 10);
+    context.fillRect(-5, -1.5, 10, 3);
+    context.restore();
+  }
   for (const projectile of game.projectiles) {
     context.fillStyle = projectile.color;
     context.strokeStyle = "rgba(255,255,255,.65)";
@@ -1549,16 +2036,31 @@ function drawCombatObjects() {
     context.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
     context.fill();
   }
+  for (const floatingText of game.floatingTexts) {
+    context.globalAlpha = Math.max(0, floatingText.life / floatingText.maxLife);
+    context.fillStyle = floatingText.color;
+    context.font = "bold 13px system-ui";
+    context.textAlign = "center";
+    context.fillText(floatingText.text, floatingText.x, floatingText.y);
+  }
   context.globalAlpha = 1;
+  context.textAlign = "start";
 }
 
 function render() {
+  context.save();
+  if (progress.settings.screenShake && game.shakeTime > 0) {
+    const strength = game.shakeTime * 28;
+    context.translate((Math.random() - 0.5) * strength, (Math.random() - 0.5) * strength);
+  }
   drawBackground();
   if (game.phase !== "loadout") {
+    for (const destructible of game.destructibles) drawDestructible(destructible);
     for (const enemy of game.enemies) drawEnemy(enemy);
     drawCombatObjects();
     drawPlayer();
   }
+  context.restore();
 }
 
 function getTestSnapshot() {
@@ -1573,12 +2075,29 @@ function getTestSnapshot() {
     enemyRanks: game.enemies.reduce((counts, enemy) => ({ ...counts, [enemy.rank]: (counts[enemy.rank] ?? 0) + 1 }), {}),
     enemyBehaviors: game.enemies.reduce((counts, enemy) => ({ ...counts, [enemy.behavior]: (counts[enemy.behavior] ?? 0) + 1 }), {}),
     enemyProjectiles: game.enemyProjectiles.length,
+    destructibles: game.destructibles.length,
+    consumables: game.consumables.length,
+    playerHealth: Math.round(player.health),
+    playerMaxHealth: Math.round(getEffectiveStat("maxHealth")),
     specials: game.enemies
       .filter((enemy) => enemy.rank !== "normal")
       .map((enemy) => ({ id: enemy.type, rank: enemy.rank, health: Math.round(enemy.health), maxHealth: Math.round(enemy.maxHealth) })),
     activeBurns: game.enemies.filter((enemy) => enemy.burnRemaining > 0).length,
     activeSlows: game.enemies.filter((enemy) => enemy.slowRemaining > 0).length,
     metrics: { ...game.metrics },
+    progress: {
+      runs: progress.runs,
+      wins: progress.wins,
+      bestWave: progress.bestWave,
+      highestDangerUnlocked: progress.highestDangerUnlocked,
+      characters: progress.unlockedCharacters.length,
+      weapons: progress.unlockedWeapons.length,
+      items: progress.unlockedItems.length,
+      enemies: progress.discoveredEnemies.length,
+    },
+    settings: { ...progress.settings },
+    floatingTexts: game.floatingTexts.length,
+    shakeTime: Number(game.shakeTime.toFixed(3)),
   };
 }
 
@@ -1625,9 +2144,53 @@ ui.nextWaveButton.addEventListener("click", () => { game.wave += 1; startWave();
 ui.restartButton.addEventListener("click", showCharacterSelection);
 ui.soundToggle.addEventListener("click", () => {
   audio.enabled = !audio.enabled;
+  progress.settings.soundEnabled = audio.enabled;
   ui.soundToggle.setAttribute("aria-pressed", String(audio.enabled));
   ui.soundToggle.textContent = audio.enabled ? "音效：开" : "音效：关";
   if (audio.enabled) ensureAudio();
+  saveProgress(progress, localTestMode);
+});
+
+ui.collectionButton.addEventListener("click", () => {
+  renderCollection();
+  ui.collectionPanel.hidden = false;
+});
+ui.collectionClose.addEventListener("click", () => { ui.collectionPanel.hidden = true; });
+ui.helpButton.addEventListener("click", () => { ui.helpPanel.hidden = false; });
+ui.helpClose.addEventListener("click", () => {
+  ui.helpPanel.hidden = true;
+  progress.tutorialSeen = true;
+  saveProgress(progress, localTestMode);
+});
+ui.settingsButton.addEventListener("click", () => {
+  renderSettings();
+  ui.settingsPanel.hidden = false;
+});
+ui.settingsClose.addEventListener("click", () => { ui.settingsPanel.hidden = true; });
+ui.volumeSlider.addEventListener("input", () => {
+  progress.settings.masterVolume = Number(ui.volumeSlider.value) / 100;
+  ui.volumeValue.textContent = `${ui.volumeSlider.value}%`;
+  persistSettings();
+});
+ui.shakeToggle.addEventListener("change", () => {
+  progress.settings.screenShake = ui.shakeToggle.checked;
+  saveProgress(progress, localTestMode);
+});
+ui.damageNumberToggle.addEventListener("change", () => {
+  progress.settings.damageNumbers = ui.damageNumberToggle.checked;
+  saveProgress(progress, localTestMode);
+});
+ui.resetSaveButton.addEventListener("click", () => {
+  if (ui.resetSaveButton.dataset.confirming !== "true") {
+    ui.resetSaveButton.dataset.confirming = "true";
+    ui.resetSaveButton.textContent = "再次点击确认重置";
+    return;
+  }
+  progress = resetProgress({ testMode: localTestMode, lockedTest: lockedTestProgress, characterIds, weaponIds, itemIds, enemyIds });
+  game.danger = 0;
+  persistSettings();
+  ui.settingsPanel.hidden = true;
+  showCharacterSelection();
 });
 
 ui.joystickBase.addEventListener("pointerdown", (event) => {
@@ -1656,7 +2219,9 @@ window.addEventListener("blur", () => {
   if (game.phase === "wave" && !game.paused) togglePause();
 });
 
+persistSettings();
 showCharacterSelection();
+if (!progress.tutorialSeen) ui.helpPanel.hidden = false;
 if (localTestMode) {
   window.__gameTest = {
     snapshot: getTestSnapshot,

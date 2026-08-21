@@ -138,3 +138,48 @@ v2 开发分支可以使用下面的本地测试地址：
 - `startWave=20&danger=4&waveDuration=2&invincible=1`：2 秒后应显示 D4 完成 20 波的胜利结算。
 
 精英和首领出现时，画面上方应显示名称、当前生命和总生命。D0 到 D4 会同时改变敌人的生命、伤害、速度和生成间隔。
+
+## 8. v2 局外成长与完整规则测试
+
+### 初始锁定进度
+
+<http://localhost:8000/?test=1&lockedProgress=1>
+
+- 初始应只有 3 名角色、8 把武器和 24 件道具，D1-D4 均锁定。
+- 图鉴应显示 `3 / 12`、`8 / 24`、`24 / 80` 和 `0 / 23`。
+- 使用 `startWave=20&waveDuration=2&invincible=1` 完成 D0 后，应解锁 D1，并更新远征次数、最高波次和通关次数。
+
+### 树木、治疗果实与回血
+
+<http://localhost:8000/?test=1&waveDuration=8&noEnemies=1&treeTest=1&startHealth=50>
+
+选择嫩芽先锋和种子发射器。测试快照应满足：
+
+- `treesDestroyed > 0`
+- `consumablesDropped > 0`
+- `consumablesPicked > 0`
+- 玩家生命高于 50
+
+### 升级品质
+
+<http://localhost:8000/?test=1&waveDuration=2&startExperience=8&upgradeRarity=4&noEnemies=1>
+
+波末四个选项都应显示“传说升级”，并使用传说品质倍率放大数值。正式模式中，等级、波次和幸运会提高高品质升级概率。
+
+### 商店武器保底
+
+<http://localhost:8000/?test=1&waveDuration=2&startMaterials=100&noEnemies=1>
+
+第 1-2 波初始商店至少出现 2 把武器，之后初始商店至少出现 1 把；已有武器类别会提高同类别武器出现概率。
+
+### 唯一、数量限制和互斥
+
+- `shopItem=glass_sprout`：购买玻璃幼芽后，其他同名货架应禁止购买。
+- `startItems=glass_sprout&shopItem=iron_boots`：持有玻璃幼芽时，互斥的铸铁田靴应禁止购买。
+- 普通属性道具前三档最多持有 3 件，最高档最多持有 1 件。
+
+### 设置与重置
+
+- 修改音量、屏幕震动和伤害数字后刷新页面，设置应保持。
+- 重置存档必须连续点击两次确认，防止误操作。
+- `test=1` 使用隔离测试进度，不会污染正式存档。
